@@ -47,7 +47,7 @@ class Cell:
         self.centroid_x = properties["centroid-1"]
         self.local_centroid_y = properties["centroid_local-0"]
         self.local_centroid_x = properties["centroid_local-1"]
-        self.orientation = properties["orientation"]
+        # self.orientation = properties["orientation"]
         self.channel_intensities = []
         for c in channels:
             self.channel_intensities.append(properties["{}_intensity_mean".format(c)])
@@ -60,21 +60,21 @@ class Cell:
     def get_point_coordinate(self, mode="no_division"):
         if mode == "no_division":
             coordinate = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
-                          self.local_centroid_y, self.orientation]
+                          self.local_centroid_y]   # , self.orientation]
             for i in self.channel_intensities:
                 coordinate.append(i)
             return np.array(coordinate)
         elif mode == "upper_division":
             coordinate = [self.area * 2, self.major * 2, self.minor, self.centroid_x,
                           self.centroid_y + self.local_centroid_y, self.local_centroid_x,
-                          self.local_centroid_y * 2, self.orientation]
+                          self.local_centroid_y * 2]   # , self.orientation]
             for i in self.channel_intensities:
                 coordinate.append(i)
             return np.array(coordinate)
         elif mode == "lower_division":
             coordinate = [self.area * 2, self.major * 2, self.minor, self.centroid_x,
                           self.centroid_y - self.local_centroid_y, self.local_centroid_x,
-                          self.local_centroid_y * 2, self.orientation]
+                          self.local_centroid_y * 2]    # , self.orientation]
             for i in self.channel_intensities:
                 coordinate.append(i)
             return np.array(coordinate)
@@ -100,18 +100,24 @@ class LineageTrack:
 
         # df_list = [pd.read_csv(f, converters = {"image_intensity":reconstruct_array_from_str}) for f in self.files]
         cols = list(pd.read_csv(self.files[0], nrows=1))
-        df_list = [pd.read_csv(f, usecols=[i for i in cols if i != 'image_intensity'],
+        columnes_to_skip = list(["image_intensity"])
+        df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columnes_to_skip],
                                dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
                                       "centroid-0": np.float32, "centroid-1": np.float32,
                                       "centroid_local-0": np.float32, "centroid_local-1": np.float32,
                                       "orientation": np.float32, "intensity_mean": np.float32})
+                                      #"trench_id": np.uint8, "time_(mins)": np.uint8, "label": np.uint8})
                    # converters={"image_intensity": reconstruct_array_from_str})
                    for f in self.files]
         # Todo: use Zarr array to reduce memory usage
         self.channels = []
-        self.df = df_list[0][["trench_id", "time_(mins)", "label", "area", "major_axis_length",
+        # list_of_properties = ["trench_id", "time_(mins)", "label", "area", "major_axis_length",
+        #                      "minor_axis_length", "centroid-0", "centroid-1",
+        #                      "centroid_local-0", "centroid_local-1", "orientation"]
+        list_of_properties = ["trench_id", "time_(mins)", "label", "area", "major_axis_length",
                               "minor_axis_length", "centroid-0", "centroid-1",
-                              "centroid_local-0", "centroid_local-1", "orientation"]].copy()
+                              "centroid_local-0", "centroid_local-1"]
+        self.df = df_list[0][list_of_properties].copy()
         for d in df_list:
             channel = d.loc[1, "channel"]
             self.channels.append(channel)
@@ -151,10 +157,11 @@ class LineageTrack:
         else:
             current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                              & (self.df["time_(mins)"] == self.current_frame)].copy()
-            # normalise here !
-            columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
-            for c in columns:
-                current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
+            ###
+            #columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
+            #for c in columns:
+            #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
+            ###
             cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
             points = [cell.get_point_coordinate("no_division") for cell in cells_list]
             return cells_list, np.array(points)
@@ -162,9 +169,11 @@ class LineageTrack:
     def load_trench_next_frame(self, channels):
         next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                       & (self.df["time_(mins)"] == self.next_frame)].copy()
-        columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
-        for c in columns:
-            next_local_data[c] = MinMaxScaler().fit_transform(np.array(next_local_data[c]).reshape(-1, 1))
+        ###
+        #columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
+        #for c in columns:
+        #    next_local_data[c] = MinMaxScaler().fit_transform(np.array(next_local_data[c]).reshape(-1, 1))
+        ###
         cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
         points_1 = [cell.get_point_coordinate("no_division") for cell in cells_list]
         points_2 = [cell.get_point_coordinate("upper_division") for cell in cells_list]
