@@ -96,7 +96,9 @@ class LineageTrack:
                 print("invalid argument(s) - should be paths to the files or a single directory")
             else:
                 self.files.append(path)
-        print(self.files)
+        print("Looking for data at these locations:")
+        for f in self.files:
+            print(f)
 
         # df_list = [pd.read_csv(f, converters = {"image_intensity":reconstruct_array_from_str}) for f in self.files]
         cols = list(pd.read_csv(self.files[0], nrows=1))
@@ -139,8 +141,6 @@ class LineageTrack:
         self.current_lysis = []
 
         print("Finished loading the data")
-        print(self.channels)
-        print(self.properties)
         print(self.df.head(1))
         print(self.df.shape)
 
