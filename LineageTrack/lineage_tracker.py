@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import normalize, MinMaxScaler
 from scipy.spatial import KDTree
+import matplotlib.pyplot as plt
+from scipy.signal import find_peaks
+from scipy.stats import linregress
 
 
 def reconstruct_array_from_str(str_version_of_array):
@@ -102,7 +105,7 @@ class LineageTrack:
 
         # df_list = [pd.read_csv(f, converters = {"image_intensity":reconstruct_array_from_str}) for f in self.files]
         cols = list(pd.read_csv(self.files[0], nrows=1))
-        columnes_to_skip = list(["image_intensity"])
+        columnes_to_skip = list(["image_intensity", "orientation"])
         df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columnes_to_skip],
                                dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
                                       "centroid-0": np.float32, "centroid-1": np.float32,
@@ -131,6 +134,8 @@ class LineageTrack:
         self.channels = sorted(list(set(self.channels)))
         self.properties = sorted(list(set(self.df.columns)))
         self.df.sort_values(["trench_id", "time_(mins)", "label"], inplace=True)
+        self.trenches = self.df.loc[:, "trench_id"]
+        self.trenches = sorted(list(set(self.trenches)))
         self.current_trench = 0
         self.current_frame = 0
         self.next_frame = 0
@@ -139,6 +144,11 @@ class LineageTrack:
         self.current_cell_number = 0
         self.next_track = []
         self.current_lysis = []
+        self.div_intervals = []
+        self.div_interval = 24  # theoretical time for division
+        self.growth_taus = []
+        self.growth_tau = 0.03
+
 
         print("Finished loading the data")
         print(self.df.head(1))
@@ -150,6 +160,90 @@ class LineageTrack:
             Channels: {self.channels}
             Properties for each cell: {self.properties}
         """
+
+    def get_mother_cell_growth(self, trench, plot=False):
+        # user defines by examining the data the period during which cells grow exponentially
+        if type(trench) is list:
+            subplots = len(trench)
+            cols = 2
+            rows = round(np.ceil(subplots / cols))
+            fig, axes = plt.subplots(nrows=rows, ncols=cols, dpi=80, figsize=(20, 20))
+            axes_flat = axes.flatten()
+            mcells = []
+            for i, tr in enumerate(trench):
+                if tr in self.trenches:
+                    mother_cell = self.df.loc[(self.df["label"] == 1) & (self.df["trench_id"] == tr),
+                                              ["time_(mins)", "major_axis_length"]].copy()
+                    mother_cell = mother_cell.to_numpy()
+                    mcells.append(mother_cell)
+                    if plot:
+                        axes_flat[i].plot(mother_cell[:, 0], mother_cell[:, 1])
+                        axes_flat[i].set_title(f"trench_ids: {tr}, the major axis length of the mother cell")
+            # fig.show()
+            return mcells
+        else:
+            if trench in self.trenches:
+                mother_cell = self.df.loc[(self.df["label"] == 1) & (self.df["trench_id"] == trench),
+                                          ["time_(mins)", "major_axis_length"]].copy()
+                mother_cell = mother_cell.to_numpy()
+                if plot:
+                    plt.figure(figsize=(10, 10))
+                    plt.plot(mother_cell[:, 0], mother_cell[:, 1])
+                    plt.title(f"trench_id: {trench}, the major axis length of the mother cell")
+                    plt.show()
+                return mother_cell
+
+    def find_division(self, trench):
+        mcell = self.get_mother_cell_growth(trench)
+        idx_p = find_peaks(mcell[:, 1], threshold=1, distance=3)
+        peaks = [mcell[p, :] for p in idx_p[0]]
+        peaks = np.array(peaks)
+        plt.figure(figsize=(10, 10))
+        plt.plot(mcell[:, 0], mcell[:, 1])
+        plt.plot(peaks[:, 0], peaks[:, 1], "x")
+        plt.title(f"trench_id: {trench}, the major axis length of the mother cell")
+        plt.show()
+        return mcell, idx_p
+
+    def collect_model_para(self, mcell, e_phase_idx, plot=False):
+        """
+        estimate parameters for the model of cells growth and division in exponential phase
+        *THIS SHOULD ONLY RUN ONCE FOR EACH MOTHER CELL IN EVERY TRENCH*
+        :param e_phase_idx: sliced index 1D array for exponential phase
+        :return: average division time interval
+        time constant - tau, for the exponential growth model
+        """
+        e_peaks = [mcell[p, :] for p in e_phase_idx]
+        e_peaks = np.array(e_peaks)
+
+        division_times = []
+        growth_taus = []
+
+        intervals = [e_peaks[i + 1][0] - e_peaks[i][0] for i in range(len(e_peaks) - 1)]
+        division_times += intervals
+        print(division_times)
+
+        for i in range(len(e_phase_idx) - 1):
+            growth = mcell[e_phase_idx[i] + 1:e_phase_idx[i + 1]]
+            slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log(growth[:, 1]))
+            if plot:
+                plt.plot(growth[:, 0] - growth[0, 0], np.log(growth[:, 1]))
+                x = np.linspace(0, 20, 100)
+                plt.plot(x, slope*x + inter)
+                print(f"the slope is estimated to be {slope}")
+                print(f"the intercept is estimated to be {inter}")
+                plt.show()
+            growth_taus.append(slope)
+
+        self.div_intervals += division_times
+        self.growth_taus += growth_taus
+
+    def update_model_para(self):
+        self.div_interval = np.mean(self.div_intervals)
+        self.growth_tau = np.mean(self.growth_taus)
+        print(f"""
+                The average time interval for division is {self.div_interval}
+                The time constant for exponential growth is {self.growth_tau}""")
 
     def load_trench_current_frame(self, channels):
         if self.buffer is not None:
@@ -201,15 +295,15 @@ class LineageTrack:
 
     def triangulation(self, current_points, predictions):
         # current_points = normalize(current_points, axis=0)
-        current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
-        current_points[:, 0] = current_points[:, 0] * 5
+        # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
+        # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
         print("the points coordinate of current trench: ")
         print(current_points)
         grid = KDTree(current_points)
         for i in range(len(predictions)):
             # predictions[i] = normalize(predictions[i], axis=0)
-            predictions[i][:, 4] = predictions[i][:, 4] * 20  # add weighting to the centroid_y
-            predictions[i][:, 0] = predictions[i][:, 0] * 5  # add weighting to the area
+            # predictions[i][:, 4] = predictions[i][:, 4] * 20  # add weighting to the centroid_y
+            # predictions[i][:, 0] = predictions[i][:, 0] * 5  # add weighting to the area
 
             print(predictions[i])
         distance1, idx1 = grid.query(predictions[0], workers=-1)
@@ -227,9 +321,7 @@ class LineageTrack:
         self.current_lysis = [i for i in idx_list if i not in self.next_track]
 
     def track_cells(self, special_reporter=None):
-        trench_list = self.df.loc[:, "trench_id"]
-        trench_list = sorted(list(set(trench_list)))
-        for tr in trench_list:
+        for tr in self.trenches:
             tr += 1 # for testing - look at different trench
             self.current_trench = tr
             self.frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
