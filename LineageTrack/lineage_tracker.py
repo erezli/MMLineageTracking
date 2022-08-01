@@ -225,9 +225,9 @@ class LineageTrack:
 
         for i in range(len(e_phase_idx) - 1):
             growth = mcell[e_phase_idx[i] + 1:e_phase_idx[i + 1]]
-            slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log(growth[:, 1]))
+            slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
             if plot:
-                plt.plot(growth[:, 0] - growth[0, 0], np.log(growth[:, 1]))
+                plt.plot(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
                 x = np.linspace(0, 20, 100)
                 plt.plot(x, slope*x + inter)
                 print(f"the slope is estimated to be {slope}")
