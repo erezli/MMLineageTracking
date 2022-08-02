@@ -7,7 +7,8 @@ from sklearn.preprocessing import normalize, MinMaxScaler
 from scipy.spatial import KDTree
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
-from scipy.stats import linregress
+from scipy.stats import linregress, poisson
+import itertools
 
 
 def reconstruct_array_from_str(str_version_of_array):
@@ -56,33 +57,31 @@ class Cell:
             self.channel_intensities.append(properties["{}_intensity_mean".format(c)])
         if reporter is not None:
             self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
+        self.coord = []
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
 
-    def get_point_coordinate(self, mode="no_division"):
-        if mode == "no_division":
-            coordinate = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
-                          self.local_centroid_y]   # , self.orientation]
-            for i in self.channel_intensities:
-                coordinate.append(i)
-            return np.array(coordinate)
-        elif mode == "upper_division":
-            coordinate = [self.area * 2, self.major * 2, self.minor, self.centroid_x,
-                          self.centroid_y + self.local_centroid_y, self.local_centroid_x,
-                          self.local_centroid_y * 2]   # , self.orientation]
-            for i in self.channel_intensities:
-                coordinate.append(i)
-            return np.array(coordinate)
-        elif mode == "lower_division":
-            coordinate = [self.area * 2, self.major * 2, self.minor, self.centroid_x,
-                          self.centroid_y - self.local_centroid_y, self.local_centroid_x,
-                          self.local_centroid_y * 2]    # , self.orientation]
-            for i in self.channel_intensities:
-                coordinate.append(i)
-            return np.array(coordinate)
+    def set_coordinates(self, division=0, growth=1, offset=0):
+        if division == 0:
+            # self.coord = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
+            #              self.local_centroid_y, self.orientation]
+            self.coord = np.array([self.major * growth, self.centroid_y + offset + self.major * (growth - 1) / 2])
+            # for i in self.channel_intensities:
+            #     self.coord.append(i)
+            return self.coord
+        elif division == 1:
+            # self.coord = [self.area * 2, self.major * 2, self.minor, self.centroid_x,
+            #               self.centroid_y + self.local_centroid_y, self.local_centroid_x,
+            #               self.local_centroid_y * 2, self.orientation]
+            self.coord = np.array(
+                [[self.major * growth / 2, self.centroid_y + offset + self.major * (2 * growth - 3) / 4],
+                 [self.major * growth / 2, self.centroid_y + offset + self.major * (2 * growth - 1) / 4]])
+            # for i in self.channel_intensities:
+            #     self.coord.append(i)
+            return self.coord
         else:
-            raise Exception("specified mode unknown")
+            raise Exception("specified division unknown")
 
 
 class LineageTrack:
@@ -111,7 +110,7 @@ class LineageTrack:
                                       "centroid-0": np.float32, "centroid-1": np.float32,
                                       "centroid_local-0": np.float32, "centroid_local-1": np.float32,
                                       "orientation": np.float32, "intensity_mean": np.float32})
-                                      #"trench_id": np.uint8, "time_(mins)": np.uint8, "label": np.uint8})
+                   # "trench_id": np.uint8, "time_(mins)": np.uint8, "label": np.uint8})
                    # converters={"image_intensity": reconstruct_array_from_str})
                    for f in self.files]
         # Todo: use Zarr array to reduce memory usage
@@ -134,21 +133,24 @@ class LineageTrack:
         self.channels = sorted(list(set(self.channels)))
         self.properties = sorted(list(set(self.df.columns)))
         self.df.sort_values(["trench_id", "time_(mins)", "label"], inplace=True)
+
         self.trenches = self.df.loc[:, "trench_id"]
         self.trenches = sorted(list(set(self.trenches)))
         self.current_trench = 0
         self.current_frame = 0
         self.next_frame = 0
+        self.dt = 0
         self.frames = []
-        self.buffer = None
-        self.current_cell_number = 0
-        self.next_track = []
-        self.current_lysis = []
+        self.current_number_of_cells = 0
+
         self.div_intervals = []
         self.div_interval = 24  # theoretical time for division
         self.growth_taus = []
         self.growth_tau = 0.03
+        self.mother_cell_collected = []
 
+        self.next_track = []
+        self.current_lysis = []
 
         print("Finished loading the data")
         print(self.df.head(1))
@@ -203,77 +205,114 @@ class LineageTrack:
         plt.plot(peaks[:, 0], peaks[:, 1], "x")
         plt.title(f"trench_id: {trench}, the major axis length of the mother cell")
         plt.show()
-        return mcell, idx_p
+        mother_cell_info = (trench, mcell)
+        return mother_cell_info, idx_p[0]
 
-    def collect_model_para(self, mcell, e_phase_idx, plot=False):
+    def collect_model_para(self, mother_cell, e_phase_idx, plot=False):
         """
         estimate parameters for the model of cells growth and division in exponential phase
         *THIS SHOULD ONLY RUN ONCE FOR EACH MOTHER CELL IN EVERY TRENCH*
-        :param e_phase_idx: sliced index 1D array for exponential phase
+        :param mcell: tuple, first entry is the trench id, second entry is the length and time of the mother cell
+        e_phase_idx: sliced index 1D array for exponential phase
         :return: average division time interval
         time constant - tau, for the exponential growth model
         """
-        e_peaks = [mcell[p, :] for p in e_phase_idx]
-        e_peaks = np.array(e_peaks)
+        if mother_cell[0] in self.mother_cell_collected:
+            return f"""this mother cell at trench {mother_cell[0]} has already been collected"""
+        else:
+            self.mother_cell_collected.append(mother_cell[0])
+            e_peaks = [mother_cell[1][p, :] for p in e_phase_idx]
+            e_peaks = np.array(e_peaks)
 
-        division_times = []
-        growth_taus = []
+            division_times = []
+            growth_taus = []
 
-        intervals = [e_peaks[i + 1][0] - e_peaks[i][0] for i in range(len(e_peaks) - 1)]
-        division_times += intervals
-        print(division_times)
+            intervals = [e_peaks[i + 1][0] - e_peaks[i][0] for i in range(len(e_peaks) - 1)]
+            division_times += intervals
+            print(division_times)
 
-        for i in range(len(e_phase_idx) - 1):
-            growth = mcell[e_phase_idx[i] + 1:e_phase_idx[i + 1]]
-            slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
-            if plot:
-                plt.plot(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
-                x = np.linspace(0, 20, 100)
-                plt.plot(x, slope*x + inter)
-                print(f"the slope is estimated to be {slope}")
-                print(f"the intercept is estimated to be {inter}")
-                plt.show()
-            growth_taus.append(slope)
+            for i in range(len(e_phase_idx) - 1):
+                growth = mother_cell[1][e_phase_idx[i] + 1:e_phase_idx[i + 1]]
+                slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
+                if plot:
+                    plt.plot(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
+                    x = np.linspace(0, 20, 100)
+                    plt.plot(x, slope * x + inter)
+                    print(f"the slope is estimated to be {slope}")
+                    print(f"the intercept is estimated to be {inter}")
+                    plt.show()
+                growth_taus.append(slope)
 
-        self.div_intervals += division_times
-        self.growth_taus += growth_taus
+            self.div_intervals += division_times
+            self.growth_taus += growth_taus
 
     def update_model_para(self):
         self.div_interval = np.mean(self.div_intervals)
         self.growth_tau = np.mean(self.growth_taus)
+        self.growth_tau = 1 / self.growth_tau
         print(f"""
                 The average time interval for division is {self.div_interval}
                 The time constant for exponential growth is {self.growth_tau}""")
 
-    def load_trench_current_frame(self, channels):
-        if self.buffer is not None:
-            return self.buffer[0], self.buffer[1]
-        else:
-            current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
-                                             & (self.df["time_(mins)"] == self.current_frame)].copy()
-            ###
-            #columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
-            #for c in columns:
-            #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
-            ###
-            cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
-            points = [cell.get_point_coordinate("no_division") for cell in cells_list]
-            return cells_list, np.array(points)
+    def calculate_growth(self):
+        return np.exp(self.dt / self.growth_tau)
 
-    def load_trench_next_frame(self, channels):
-        next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
-                                      & (self.df["time_(mins)"] == self.next_frame)].copy()
+    def calculate_p_div(self, n):
+        # n = 0: no division
+        # n = 1: division
+        return poisson.pmf(n, self.dt / self.growth_tau)
+
+    def cells_simulator(self, cells_list, max_dpf):
+        growth = self.calculate_growth()
+        cells_futures = []
+        cells_state = []
+        for d in range(max_dpf):
+            offset = 0
+            prob = self.calculate_p_div(d)
+            d_list = []
+            d_list.extend([1] * d)
+            d_list.extend([0] * (self.current_number_of_cells - d))
+            combinations = set(list(itertools.permutations(d_list)))
+            for comb in combinations:
+                for i in range(self.current_number_of_cells):
+                    cells_list[i].set_coordinates(division=comb[i], growth=growth, offset=offset)
+                    if comb[i] == 0:
+                        offset += cells_list[i].coord[0] * (1 - 1 / growth)
+                    elif comb[i] == 1:
+                        offset += cells_list[i].coord[0][0] * (1 - 1 / growth) * 2
+                    else:
+                        print("There's something wrong with the list of combination of division and no division:")
+                        print(comb)
+                cells_futures.append(tuple(prob, cells_list))
+                cells_state.append(["Growing" if x == 0 else "Divided!" for x in comb])
+        return cells_futures, cells_state
+
+    def load_current_frame(self, threshold, channels):
+        current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
+                                         & (self.df["time_(mins)"] == self.current_frame)
+                                         & (self.df["centroid-0"] < threshold)].copy()
         ###
-        #columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
-        #for c in columns:
+        # normalise? features do not have the same units
+        # maybe consider only using geometrical features
+        # columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
+        # for c in columns:
+        #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
+        ###
+        cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
+        self.current_number_of_cells = len(cells_list)
+        return cells_list
+
+    def load_next_frame(self, threshold, channels):
+        next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
+                                      & (self.df["time_(mins)"] == self.next_frame)
+                                      & (self.df["centroid-0"] < threshold)].copy()
+        ###
+        # columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
+        # for c in columns:
         #    next_local_data[c] = MinMaxScaler().fit_transform(np.array(next_local_data[c]).reshape(-1, 1))
         ###
         cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
-        points_1 = [cell.get_point_coordinate("no_division") for cell in cells_list]
-        points_2 = [cell.get_point_coordinate("upper_division") for cell in cells_list]
-        points_3 = [cell.get_point_coordinate("lower_division") for cell in cells_list]
-        self.buffer = (cells_list, np.array(points_1))
-        return cells_list, [np.array(points_1), np.array(points_2), np.array(points_3)]
+        return cells_list
 
     def compare_distance(self, distances, idx1, idx2, idx3):
         pointers = distances.idxmin(axis=1)
@@ -317,36 +356,43 @@ class LineageTrack:
         self.compare_distance(df, idx1, idx2, idx3)
 
     def lysis_cells(self):
-        idx_list = range(self.current_cell_number)
+        idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i for i in idx_list if i not in self.next_track]
 
-    def track_cells(self, special_reporter=None):
-        for tr in self.trenches:
-            tr += 1 # for testing - look at different trench
-            self.current_trench = tr
+    def track_trech(self, trench, threshold=-1, max_dpf=1, special_reporter=None):
+        if trench in self.trenches:
+            self.current_trench = trench
             self.frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
             self.frames = sorted(list(set(self.frames)))
             for i in range(len(self.frames) - 1):
                 self.current_frame = self.frames[i]
                 self.next_frame = self.frames[i + 1]
+                self.dt = self.next_frame - self.current_frame
                 if special_reporter is None:
-                    current_cells, grid = self.load_trench_current_frame(self.channels)
-                    next_cells, points = self.load_trench_next_frame(self.channels)
-                    self.current_cell_number = len(current_cells)
+                    # Special reporter is to give an ability to track cells using a specified reporter,
+                    # e.g., infected by phage
+                    # Use the original channels here since no special reporter
+                    current_cells = self.load_current_frame(threshold, self.channels)
+                    cells_furtures, cells_states = self.cells_simulator(current_cells, max_dpf)
+                    # this is a list of tuples (probability, cells) and cells is a list of object Cell
+                    next_cells = self.load_next_frame(threshold, self.channels)
+                    # points = np.array([cell.set_coordinates(0) for cell in next_cells])
 
                     print("looking at cells: ")
                     for x in range(len(current_cells)):
                         print(current_cells[x])
-                    # print(grid)
+                    print("simulating these scenarios: ")
+                    for x in cells_states:
+                        print(cells_states)
 
-                    self.triangulation(grid, points)
+                    # self.triangulation(grids, points)
                     # index pointers to the current frame cells from next frame
-                    self.lysis_cells()
+                    # self.lysis_cells()
                     # index of the current frame cells
-                    list_track = [i+1 for i in self.next_track ]
-                    print(list_track)
-                    list_lyse = [i+1 for i in self.current_lysis]
-                    print(list_lyse)
+                    # list_track = [i + 1 for i in self.next_track]
+                    # print(list_track)
+                    # list_lysis = [i + 1 for i in self.current_lysis]
+                    # print(list_lysis)
                 else:
                     if special_reporter in self.channels:
                         """
@@ -358,6 +404,3 @@ class LineageTrack:
                 ### for testing ###
                 if i == 0:
                     break
-            self.buffer = None
-            ### for testing ###
-            break
