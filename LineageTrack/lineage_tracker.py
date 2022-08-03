@@ -4,11 +4,13 @@ import re
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import normalize, MinMaxScaler
-from scipy.spatial import KDTree
+from scipy.spatial import KDTree, distance_matrix
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from scipy.stats import linregress, poisson
 import itertools
+import copy
+from math import comb
 
 
 def reconstruct_array_from_str(str_version_of_array):
@@ -66,7 +68,7 @@ class Cell:
         if division == 0:
             # self.coord = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
             #              self.local_centroid_y, self.orientation]
-            self.coord = np.array([self.major * growth, self.centroid_y + offset + self.major * (growth - 1) / 2])
+            self.coord = np.array([[self.major * growth, self.centroid_y + offset + self.major * (growth - 1) / 2]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             return self.coord
@@ -82,6 +84,27 @@ class Cell:
             return self.coord
         else:
             raise Exception("specified division unknown")
+
+
+def nearest_neighbour(points, true_coord, mode="KDTree"):
+    if mode == "KDTree":
+        grid = KDTree(points)
+        # idx points to the index of points constructing the KDTree
+        distance, idx = grid.query(true_coord, workers=-1)
+        return distance, idx
+    if mode == "SeqMatch":
+        # match exclusively
+        d_mtx = distance_matrix(points, true_coord)
+        distance = []
+        idx = []
+        index_mtx = np.argsort(d_mtx, axis=1)
+        for row in range(index_mtx.shape[0]):
+            for i in index_mtx[row]:
+                if i not in idx:
+                    idx.append(i)
+                    distance.append(d_mtx[row][i])
+                    break
+        return distance, idx
 
 
 class LineageTrack:
@@ -236,7 +259,7 @@ class LineageTrack:
                 slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
                 if plot:
                     plt.plot(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
-                    x = np.linspace(0, 20, 100)
+                    x = np.linspace(0, 24, 100)
                     plt.plot(x, slope * x + inter)
                     print(f"the slope is estimated to be {slope}")
                     print(f"the intercept is estimated to be {inter}")
@@ -255,7 +278,7 @@ class LineageTrack:
                 The time constant for exponential growth is {self.growth_tau}""")
 
     def calculate_growth(self):
-        return np.exp(self.dt / self.growth_tau)
+        return 2**(self.dt / self.growth_tau)
 
     def calculate_p_div(self, n):
         # n = 0: no division
@@ -266,29 +289,38 @@ class LineageTrack:
         growth = self.calculate_growth()
         cells_futures = []
         cells_state = []
-        for d in range(max_dpf):
-            offset = 0
-            prob = self.calculate_p_div(d)
+        prob_0 = self.calculate_p_div(0)
+        prob_1 = self.calculate_p_div(1)
+        for d in range(max_dpf+1):
             d_list = []
             d_list.extend([1] * d)
             d_list.extend([0] * (self.current_number_of_cells - d))
             combinations = set(list(itertools.permutations(d_list)))
-            for comb in combinations:
+            for com in combinations:
+                offset = 0
+                prob = 1
                 for i in range(self.current_number_of_cells):
-                    cells_list[i].set_coordinates(division=comb[i], growth=growth, offset=offset)
-                    if comb[i] == 0:
-                        offset += cells_list[i].coord[0] * (1 - 1 / growth)
-                    elif comb[i] == 1:
+                    cells_list[i].set_coordinates(division=com[i], growth=growth, offset=offset)
+                    if com[i] == 0:
+                        offset += cells_list[i].coord[0][0] * (1 - 1 / growth)
+                        prob *= prob_0
+                    elif com[i] == 1:
                         offset += cells_list[i].coord[0][0] * (1 - 1 / growth) * 2
+                        prob *= prob_1
                     else:
                         print("There's something wrong with the list of combination of division and no division:")
-                        print(comb)
-                cells_futures.append(tuple(prob, cells_list))
-                cells_state.append(["Growing" if x == 0 else "Divided!" for x in comb])
+                        print(com)
+                cells_futures.append([prob * comb(self.current_number_of_cells, d), copy.deepcopy(cells_list)])
+                cells_state.append(["Growing" if x == 0 else "Divided!" for x in com])
         return cells_futures, cells_state
 
     def load_current_frame(self, threshold, channels):
-        current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
+        if threshold == -1:
+            current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
+                                             & (self.df["time_(mins)"] == self.current_frame)].copy()
+
+        else:
+            current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                          & (self.df["time_(mins)"] == self.current_frame)
                                          & (self.df["centroid-0"] < threshold)].copy()
         ###
@@ -312,6 +344,8 @@ class LineageTrack:
         #    next_local_data[c] = MinMaxScaler().fit_transform(np.array(next_local_data[c]).reshape(-1, 1))
         ###
         cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
+        for i in range(len(cells_list)):
+            cells_list[i].set_coordinates(0)
         return cells_list
 
     def compare_distance(self, distances, idx1, idx2, idx3):
@@ -332,38 +366,78 @@ class LineageTrack:
                 raise ValueError
         self.next_track = nn_list
 
-    def triangulation(self, current_points, predictions):
+    def score_futures(self, predicted_future, predicted_state, true_future):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
-        print("the points coordinate of current trench: ")
-        print(current_points)
-        grid = KDTree(current_points)
-        for i in range(len(predictions)):
-            # predictions[i] = normalize(predictions[i], axis=0)
-            # predictions[i][:, 4] = predictions[i][:, 4] * 20  # add weighting to the centroid_y
-            # predictions[i][:, 0] = predictions[i][:, 0] * 5  # add weighting to the area
+        true_coord = []
+        for cell in true_future:
+            true_coord.append(cell.coord[0])
+        true_coord = np.array(true_coord)
+        print(true_coord)
+        max_score = 0
+        for i in range(len(predicted_future)):
+            print("the simulated scenario: ")
+            print(predicted_state[i])
+            pr = predicted_future[i][0]
+            print("with probability: ")
+            print(pr)
+            points = []
+            cells_arrangement = []
+            for cell in predicted_future[i][1]:
+                for c in cell.coord:
+                    cells_arrangement.append(cell)
+                    points.append(c)
+            points = np.array(points)
+            print(points)
 
-            print(predictions[i])
-        distance1, idx1 = grid.query(predictions[0], workers=-1)
-        distance2, idx2 = grid.query(predictions[1], workers=-1)
-        distance3, idx3 = grid.query(predictions[2], workers=-1)
-        df = pd.DataFrame(data={
-            "d1": distance1,
-            "d2": distance2,
-            "d3": distance3
-        })
-        self.compare_distance(df, idx1, idx2, idx3)
+            distance, idx = nearest_neighbour(points, true_coord, mode="SeqMatch")
+
+            label_track = []
+            for j in idx:
+                label_track.append(cells_arrangement[j].label)
+            score = pr / np.sum(distance)
+            # for stronger influence of distance
+            # score = pr / (np.sum(distance)**2
+            if score > max_score:
+                self.next_track = label_track
+                max_score = score
+                matched_scenario = predicted_state[i]
+
+            print("score: ")
+            print(score)
+            print("score_futures result:")
+            print(distance)
+            print(label_track)
+            print("\n\n")
+        print("RESULT:")
+        print(max_score)
+        print(matched_scenario)
+        ###
+        #distance1, idx1 = grid.query(predictions[0], workers=-1)
+        #distance2, idx2 = grid.query(predictions[1], workers=-1)
+        #distance3, idx3 = grid.query(predictions[2], workers=-1)
+        #df = pd.DataFrame(data={
+        #    "d1": distance1,
+        #    "d2": distance2,
+        #    "d3": distance3
+        #})
+        #self.compare_distance(df, idx1, idx2, idx3)
 
     def lysis_cells(self):
         idx_list = range(self.current_number_of_cells)
-        self.current_lysis = [i for i in idx_list if i not in self.next_track]
+        self.current_lysis = [i+1 for i in idx_list if i+1 not in self.next_track]
 
-    def track_trech(self, trench, threshold=-1, max_dpf=1, special_reporter=None):
+    def track_trench(self, trench, threshold=-1, max_dpf=1, special_reporter=None):
         if trench in self.trenches:
             self.current_trench = trench
             self.frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
             self.frames = sorted(list(set(self.frames)))
+            track_list = []
+            lysis_list = []
+            cell_label = []
+            current_frame_list = []
+            future_frame_list = []
             for i in range(len(self.frames) - 1):
                 self.current_frame = self.frames[i]
                 self.next_frame = self.frames[i + 1]
@@ -381,18 +455,16 @@ class LineageTrack:
                     print("looking at cells: ")
                     for x in range(len(current_cells)):
                         print(current_cells[x])
-                    print("simulating these scenarios: ")
-                    for x in cells_states:
-                        print(cells_states)
-
-                    # self.triangulation(grids, points)
+                    self.score_futures(cells_furtures, cells_states, next_cells)
                     # index pointers to the current frame cells from next frame
-                    # self.lysis_cells()
-                    # index of the current frame cells
-                    # list_track = [i + 1 for i in self.next_track]
-                    # print(list_track)
-                    # list_lysis = [i + 1 for i in self.current_lysis]
-                    # print(list_lysis)
+                    self.lysis_cells()
+
+                    track_list.append(self.next_track)
+                    lysis_list.append(self.current_lysis)
+                    cell_label.append([cell.label for cell in next_cells])
+                    current_frame_list.append([self.current_frame] * len(self.current_lysis))
+                    future_frame_list.append([self.next_frame] * len(self.next_track))
+
                 else:
                     if special_reporter in self.channels:
                         """
@@ -402,5 +474,18 @@ class LineageTrack:
                     else:
                         raise Exception("the specified channel has no data found")
                 ### for testing ###
-                if i == 0:
-                    break
+                if i == 1:
+                     break
+
+            self.track_df = pd.DataFrame(data={
+                "trench_id": [self.current_trench] * len(future_frame_list),
+                "time_(mins)": future_frame_list,
+                "label": cell_label,
+                "parent_label": track_list
+            })
+
+            self.lysis_df = pd.DataFrame(data={
+                "trench_id": [self.current_trench] * len(current_frame_list),
+                "time_(mins)": current_frame_list,
+                "label": lysis_list
+            })
