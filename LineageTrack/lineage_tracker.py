@@ -94,16 +94,20 @@ def nearest_neighbour(points, true_coord, mode="KDTree"):
         return distance, idx
     if mode == "SeqMatch":
         # match exclusively
-        d_mtx = distance_matrix(points, true_coord)
+        d_mtx = distance_matrix(true_coord, points)
         distance = []
         idx = []
         index_mtx = np.argsort(d_mtx, axis=1)
         for row in range(index_mtx.shape[0]):
-            for i in index_mtx[row]:
-                if i not in idx:
-                    idx.append(i)
-                    distance.append(d_mtx[row][i])
+            for col in range(index_mtx.shape[1]):
+                if index_mtx[row][col] not in idx:
+                    idx.append(index_mtx[row][col])
+                    distance.append(d_mtx[row][index_mtx[row][col]])
                     break
+                elif col == index_mtx.shape[1] - 1:
+                    # for the case next frame has more cells than the simulated scenario
+                    idx.append(None)
+                    distance.append(d_mtx[row][col])
         return distance, idx
 
 
@@ -169,14 +173,14 @@ class LineageTrack:
         self.div_intervals = []
         self.div_interval = 24  # theoretical time for division
         self.growth_taus = []
-        self.growth_tau = 0.03
+        self.growth_tau = 24
         self.mother_cell_collected = []
 
         self.next_track = []
         self.current_lysis = []
 
         print("Finished loading the data")
-        print(self.df.head(1))
+        # print(f"Head: {self.df.head(1)}")
         print(self.df.shape)
 
     def __str__(self):
@@ -235,7 +239,7 @@ class LineageTrack:
         """
         estimate parameters for the model of cells growth and division in exponential phase
         *THIS SHOULD ONLY RUN ONCE FOR EACH MOTHER CELL IN EVERY TRENCH*
-        :param mcell: tuple, first entry is the trench id, second entry is the length and time of the mother cell
+        :param mother_cell: tuple, first entry is the trench id, second entry is the length and time of the mother cell
         e_phase_idx: sliced index 1D array for exponential phase
         :return: average division time interval
         time constant - tau, for the exponential growth model
@@ -366,22 +370,21 @@ class LineageTrack:
                 raise ValueError
         self.next_track = nn_list
 
-    def score_futures(self, predicted_future, predicted_state, true_future):
+    def score_futures(self, predicted_future, predicted_state, true_future, mode = "SeqMatch"):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
+        matched_scenario = []
         true_coord = []
         for cell in true_future:
             true_coord.append(cell.coord[0])
         true_coord = np.array(true_coord)
-        print(true_coord)
+        # print(true_coord)
         max_score = 0
         for i in range(len(predicted_future)):
-            print("the simulated scenario: ")
-            print(predicted_state[i])
+            # print("the simulated scenario: {}".format(predicted_state[i]))
             pr = predicted_future[i][0]
-            print("with probability: ")
-            print(pr)
+            # print("with probability: {}"format(pr))
             points = []
             cells_arrangement = []
             for cell in predicted_future[i][1]:
@@ -389,30 +392,32 @@ class LineageTrack:
                     cells_arrangement.append(cell)
                     points.append(c)
             points = np.array(points)
-            print(points)
+            # print(points)
 
-            distance, idx = nearest_neighbour(points, true_coord, mode="SeqMatch")
-
+            distance, idx = nearest_neighbour(points, true_coord, mode=mode)
+            # print(idx)
             label_track = []
             for j in idx:
-                label_track.append(cells_arrangement[j].label)
-            score = pr / np.sum(distance)
+                if j is not None:
+                    label_track.append(cells_arrangement[j].label)
+                else:
+                    label_track.append(None)
+            # score = pr / np.sum(distance)
             # for stronger influence of distance
-            # score = pr / (np.sum(distance)**2
+            score = pr / ((np.sum(distance))**2)
             if score > max_score:
                 self.next_track = label_track
                 max_score = score
                 matched_scenario = predicted_state[i]
 
-            print("score: ")
-            print(score)
-            print("score_futures result:")
-            print(distance)
-            print(label_track)
-            print("\n\n")
+            # print("score: {}".format(score))
+            # print("score_futures result: {}".format(label_track))
+            # print(distance)
+            # print("\n")
         print("RESULT:")
         print(max_score)
         print(matched_scenario)
+        print("\n")
         ###
         #distance1, idx1 = grid.query(predictions[0], workers=-1)
         #distance2, idx2 = grid.query(predictions[1], workers=-1)
@@ -428,7 +433,7 @@ class LineageTrack:
         idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i+1 for i in idx_list if i+1 not in self.next_track]
 
-    def track_trench(self, trench, threshold=-1, max_dpf=1, special_reporter=None):
+    def track_trench(self, trench, threshold=-1, max_dpf=1, mode = "SeqMatch", special_reporter=None):
         if trench in self.trenches:
             self.current_trench = trench
             self.frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
@@ -436,8 +441,8 @@ class LineageTrack:
             track_list = []
             lysis_list = []
             cell_label = []
-            current_frame_list = []
-            future_frame_list = []
+            lysis_frame_list = []
+            track_frame_list = []
             for i in range(len(self.frames) - 1):
                 self.current_frame = self.frames[i]
                 self.next_frame = self.frames[i + 1]
@@ -455,15 +460,15 @@ class LineageTrack:
                     print("looking at cells: ")
                     for x in range(len(current_cells)):
                         print(current_cells[x])
-                    self.score_futures(cells_furtures, cells_states, next_cells)
+                    self.score_futures(cells_furtures, cells_states, next_cells, mode=mode)
                     # index pointers to the current frame cells from next frame
                     self.lysis_cells()
 
-                    track_list.append(self.next_track)
-                    lysis_list.append(self.current_lysis)
-                    cell_label.append([cell.label for cell in next_cells])
-                    current_frame_list.append([self.current_frame] * len(self.current_lysis))
-                    future_frame_list.append([self.next_frame] * len(self.next_track))
+                    track_list.extend(self.next_track)
+                    lysis_list.extend(self.current_lysis)
+                    cell_label.extend([cell.label for cell in next_cells])
+                    lysis_frame_list.extend([self.current_frame] * len(self.current_lysis))
+                    track_frame_list.extend([self.next_frame] * len(self.next_track))
 
                 else:
                     if special_reporter in self.channels:
@@ -474,18 +479,18 @@ class LineageTrack:
                     else:
                         raise Exception("the specified channel has no data found")
                 ### for testing ###
-                if i == 1:
-                     break
-
+                # if i == 0:
+                #     break
+            trench_track = [self.current_trench] * len(track_frame_list)
             self.track_df = pd.DataFrame(data={
-                "trench_id": [self.current_trench] * len(future_frame_list),
-                "time_(mins)": future_frame_list,
+                "trench_id": trench_track,
+                "time_(mins)": track_frame_list,
                 "label": cell_label,
                 "parent_label": track_list
             })
-
+            trench_lyse = [self.current_trench] * len(lysis_frame_list)
             self.lysis_df = pd.DataFrame(data={
-                "trench_id": [self.current_trench] * len(current_frame_list),
-                "time_(mins)": current_frame_list,
+                "trench_id": trench_lyse,
+                "time_(mins)": lysis_frame_list,
                 "label": lysis_list
             })
