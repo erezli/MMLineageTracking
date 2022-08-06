@@ -256,7 +256,7 @@ class LineageTrack:
 
             intervals = [e_peaks[i + 1][0] - e_peaks[i][0] for i in range(len(e_peaks) - 1)]
             division_times += intervals
-            print(division_times)
+            # print(division_times)
 
             for i in range(len(e_phase_idx) - 1):
                 growth = mother_cell[1][e_phase_idx[i] + 1:e_phase_idx[i + 1]]
@@ -370,32 +370,30 @@ class LineageTrack:
                 raise ValueError
         self.next_track = nn_list
 
-    def score_futures(self, predicted_future, predicted_state, true_future, mode = "SeqMatch"):
+    def score_futures(self, predicted_future, predicted_state, true_future, mode="SeqMatch"):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
         matched_scenario = []
         true_coord = []
         for cell in true_future:
-            true_coord.append(cell.coord[0])
+            true_coord.append([cell.coord[0][0], cell.coord[0][1] - true_future[0].coord[0][1]])
         true_coord = np.array(true_coord)
         # print(true_coord)
         max_score = 0
         for i in range(len(predicted_future)):
             # print("the simulated scenario: {}".format(predicted_state[i]))
             pr = predicted_future[i][0]
-            # print("with probability: {}"format(pr))
+            # print("with probability: {}".format(pr))
             points = []
             cells_arrangement = []
             for cell in predicted_future[i][1]:
                 for c in cell.coord:
                     cells_arrangement.append(cell)
-                    points.append(c)
+                    points.append([c[0], c[1] - predicted_future[i][1][0].coord[0][1]])
             points = np.array(points)
             # print(points)
-
             distance, idx = nearest_neighbour(points, true_coord, mode=mode)
-            # print(idx)
             label_track = []
             for j in idx:
                 if j is not None:
@@ -433,7 +431,7 @@ class LineageTrack:
         idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i+1 for i in idx_list if i+1 not in self.next_track]
 
-    def track_trench(self, trench, threshold=-1, max_dpf=1, mode = "SeqMatch", special_reporter=None):
+    def track_trench(self, trench, threshold=-1, max_dpf=1, mode="SeqMatch", special_reporter=None):
         if trench in self.trenches:
             self.current_trench = trench
             self.frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
@@ -452,7 +450,10 @@ class LineageTrack:
                     # e.g., infected by phage
                     # Use the original channels here since no special reporter
                     current_cells = self.load_current_frame(threshold, self.channels)
-                    cells_furtures, cells_states = self.cells_simulator(current_cells, max_dpf)
+                    if max_dpf > self.current_number_of_cells:
+                        cells_furtures, cells_states = self.cells_simulator(current_cells, self.current_number_of_cells)
+                    else:
+                        cells_furtures, cells_states = self.cells_simulator(current_cells, max_dpf)
                     # this is a list of tuples (probability, cells) and cells is a list of object Cell
                     next_cells = self.load_next_frame(threshold, self.channels)
                     # points = np.array([cell.set_coordinates(0) for cell in next_cells])
@@ -460,6 +461,7 @@ class LineageTrack:
                     print("looking at cells: ")
                     for x in range(len(current_cells)):
                         print(current_cells[x])
+
                     self.score_futures(cells_furtures, cells_states, next_cells, mode=mode)
                     # index pointers to the current frame cells from next frame
                     self.lysis_cells()
