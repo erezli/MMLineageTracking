@@ -5,13 +5,13 @@ class Cell:
         self.trench = properties["trench_id"]
         self.time = properties["time_(mins)"]
         self.label = properties["label"]
-        self.area = properties["area"]
+        # self.area = properties["area"]
         self.major = properties["major_axis_length"]
         self.minor = properties["minor_axis_length"]
         self.centroid_y = properties["centroid-0"]
         self.centroid_x = properties["centroid-1"]
-        self.local_centroid_y = properties["centroid_local-0"]
-        self.local_centroid_x = properties["centroid_local-1"]
+        # self.local_centroid_y = properties["centroid_local-0"]
+        # self.local_centroid_x = properties["centroid_local-1"]
         # self.orientation = properties["orientation"]
         self.channel_intensities = []
         for c in channels:
@@ -19,6 +19,7 @@ class Cell:
         if reporter is not None:
             self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
         self.coord = []
+        self.devide = False
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
@@ -40,6 +41,7 @@ class Cell:
                  [self.major * growth / 2, self.centroid_y + offset + self.major * (2 * growth - 1) / 4]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
+            self.divide = True
             return self.coord
         else:
             raise Exception("specified division unknown")

@@ -90,13 +90,13 @@ class LineageTrack:
         ### load data ###
         # df_list = [pd.read_csv(f, converters = {"image_intensity":reconstruct_array_from_str}) for f in self.files]
         cols = list(pd.read_csv(self.files[0], nrows=1))
-        columnes_to_skip = list(["image_intensity", "orientation"])
+        columnes_to_skip = list(["image_intensity", "orientation", "centroid_local-0", "centroid_local-1"])
         df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columnes_to_skip],
                                dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
                                       "centroid-0": np.float32, "centroid-1": np.float32,
-                                      "centroid_local-0": np.float32, "centroid_local-1": np.float32,
                                       "orientation": np.float32, "intensity_mean": np.float32})
-                   # "trench_id": np.uint8, "time_(mins)": np.uint8, "label": np.uint8})
+                   # "trench_id": np.uint8, "time_(mins)": np.uint8, "label": np.uint8,
+                   # "centroid_local-0": np.float32, "centroid_local-1": np.float32}
                    # converters={"image_intensity": reconstruct_array_from_str})
                    for f in self.files]
         # Todo: use Zarr array to reduce memory usage
@@ -105,8 +105,7 @@ class LineageTrack:
         #                      "minor_axis_length", "centroid-0", "centroid-1",
         #                      "centroid_local-0", "centroid_local-1", "orientation"]
         list_of_properties = ["trench_id", "time_(mins)", "label", "area", "major_axis_length",
-                              "minor_axis_length", "centroid-0", "centroid-1",
-                              "centroid_local-0", "centroid_local-1"]
+                              "minor_axis_length", "centroid-0", "centroid-1"]
         self.df = df_list[0][list_of_properties].copy()
         for d in df_list:
             channel = d.loc[1, "channel"]
