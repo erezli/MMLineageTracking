@@ -56,14 +56,24 @@ class Visualiser:
                     mask = cv.imread(mask_dir + os.path.sep + path1)
                     # print(mask.shape)
                     for c in range(len(cells.at[0, "label"])):
-                        position = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
-                        cv.drawMarker(mask, position, (255, 0, 0))
+                        position_1 = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
+                        cv.drawMarker(mask, position_1, (255, 0, 0))
                         if c > 0:
                             if (cells.at[0, "parent_label"][c] == cells.at[0, "parent_label"][c - 1]) & \
                                     (cells.at[0, "parent_label"][c] is not None):
                                 position_2 = (round(cells.at[0, "centroid"][c - 1][0]),
                                               round(cells.at[0, "centroid"][c - 1][1]))
-                                cv.line(mask, position, position_2, (0, 255, 0), thickness=2)
+                                cv.line(mask, position_1, position_2, (0, 255, 0), thickness=2)
+                                middle_position = (round((position_1[0] + position_2[0])/2) + 5,
+                                                   round((position_1[1] + position_2[1])/2) - 7)
+                                cv.putText(mask, "divide",
+                                           middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                                middle_position = (middle_position[0], middle_position[1] + 7)
+                                cv.putText(mask, "from",
+                                           middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                                middle_position = (middle_position[0], middle_position[1] + 7)
+                                cv.putText(mask, f"cell no{int(cells.at[0, 'parent_label'][c])}",
+                                           middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     path2 = generate_file_name(template, "labelled_", self.FOV, t, frame)
                     if not os.path.isdir(save_dir):
                         os.mkdir(save_dir)
