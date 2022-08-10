@@ -3,17 +3,18 @@ from glob import glob
 import re
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import normalize, MinMaxScaler
 from scipy.spatial import KDTree, distance_matrix
-import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from scipy.stats import linregress, poisson
+from scipy.stats import norm
 import itertools
 import copy
 from math import comb
 from LineageTrack.cells import Cell
-from scipy.stats import norm
 from tqdm import tqdm
+from joblib import Parallel, delayed
 
 
 def reconstruct_array_from_str(str_version_of_array):
@@ -294,7 +295,7 @@ class LineageTrack:
             cells_state.append(["SP"] * len(self.buffer))
         else:
             for i in range(len(cells_list)):
-                cells_list[i].set_coordinates(0)
+                cells_list[i].set_coordinates()
             cells_futures.append([p_sp, copy.deepcopy(cells_list)])
             cells_state.append(["SP"] * len(cells_list))
         for d in range(max_dpf + 1):
@@ -343,7 +344,7 @@ class LineageTrack:
                                       & (self.df["centroid-0"] < threshold)].copy()
         cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
         for i in range(len(cells_list)):
-            cells_list[i].set_coordinates(0)
+            cells_list[i].set_coordinates()
         self.buffer = cells_list
         return cells_list
 
@@ -365,7 +366,7 @@ class LineageTrack:
                 raise ValueError
         self.next_track = nn_list
 
-    def calc_score(self, predicted_future, predicted_state, true_coord, max_score, matched_scenario, shift=0, mode="SeqMatch"):
+    def calc_score(self, predicted_future, predicted_state, true_coord, max_score, matched_scenario, cells, shift=0):
         for i in range(len(predicted_future)):
             # print("the simulated scenario: {}".format(predicted_state[i]))
             pr = predicted_future[i][0]
@@ -378,57 +379,64 @@ class LineageTrack:
                     points.append([c[0], c[1] - predicted_future[i][1][shift].coord[0][1]])
             points = np.array(points)
             # print(points)
-            distance, idx = nearest_neighbour(points, true_coord, mode=mode)
-            label_track = []
-            for j in idx:
-                if j is not None:
-                    label_track.append(cells_arrangement[j].label)
-                else:
-                    label_track.append(None)
+            distance, idx = nearest_neighbour(points, true_coord, mode=self.mode)
             # score = pr / np.sum(distance)
             # for stronger influence of distance
             score = pr / ((np.sum(distance)) ** 2)
             if score > max_score:
+                label_track = []
+                for j in idx:
+                    if j is not None:
+                        label_track.append(cells_arrangement[j].label)
+                    else:
+                        label_track.append(None)
                 self.next_track = label_track
                 max_score = score
                 matched_scenario = predicted_state[i]
+                cells = copy.deepcopy(predicted_future[i][1])
             # print("score: {}".format(score))
             # print("score_futures result: {}".format(label_track))
             # print(distance)
             # print("\n")
-        return max_score, matched_scenario
+        return max_score, matched_scenario, cells
 
-    def score_futures(self, predicted_future, predicted_state, true_future, mode="SeqMatch", show_details=False):
+    def score_futures(self, predicted_future, predicted_state, true_future):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
-        matched_scenario = []
         true_coord = []
+        matched_scenario = []
+        cells = None
         mcell_current = predicted_future[0][1][0].coord
         for cell in true_future:
             true_coord.append([cell.coord[0][0], cell.coord[0][1] - true_future[0].coord[0][1]])
         true_coord = np.array(true_coord)
         # print(true_coord)
         max_score = 0
-        max_score, matched_scenario = self.calc_score(predicted_future, predicted_state, true_coord, max_score,
-                                                      matched_scenario, shift=0, mode=mode)
+        max_score, matched_scenario, cells = self.calc_score(predicted_future, predicted_state, true_coord,
+                                                             max_score, matched_scenario, cells, shift=0)
         if abs(true_future[0].coord[0][1] - mcell_current[0][1]) >= \
                 ((mcell_current[0][0] + true_future[0].coord[0][0]) * 0.375):
             # the mother cell could have lysed since the first cell shifts more than 3/4 of its length between frames
-            print("mother cell lyses or possibly a huge shift in all cells at t = {}min".format(self.current_frame))
-            self.calc_score(predicted_future, predicted_state, true_coord,
-                            max_score, matched_scenario, shift=1, mode=mode)
-        if show_details:
+            if self.show_details:
+                print("mother cell lyses or possibly a huge shift in all cells at t = {}min".format(self.current_frame))
+            max_score, matched_scenario, cells = self.calc_score(predicted_future, predicted_state, true_coord,
+                                                                 max_score, matched_scenario, cells, shift=1)
+        if self.show_details:
             print("RESULT:")
             print(max_score)
             print(matched_scenario)
             print("\n")
+        for i in range(len(cells)):
+            cells[i].set_coordinates(reset_original=True)
+        return cells
 
     def lysis_cells(self):
         idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i + 1 for i in idx_list if i + 1 not in self.next_track]
 
-    def track_trench(self, trench, threshold=-1, max_dpf=1, mode="SeqMatch", p_sp=0, special_reporter=None, show_details=False):
+    def track_trench(self, trench, threshold=-1, max_dpf=1, mode="SeqMatch", p_sp=0,
+                     special_reporter=None, show_details=False, ret_df=False):
         """
         Track cells in specified trench, results are stored in a pandas DataFrame, with a colume that contains
         the labels of the parent cell from previous frame.
@@ -440,9 +448,10 @@ class LineageTrack:
         @param mode:  is to select the method used to search the cells' matching future,
         options are simple nearest neighbour 'KDTree'
         or sequence matching 'SeqMatch' (exclusively one-to-one matching, suggested)
-        @param p_sp:
+        @param p_sp: Probability of all cells entering stationary phase, i.e., stop growing.
         @param special_reporter:
-        @param show_details:
+        @param show_details: Display more details about the process
+        @param res_df: If True, output pandas dataframe. If False, output dictionary structure.
         """
         if trench in self.trenches:
             self.current_trench = trench
@@ -451,20 +460,21 @@ class LineageTrack:
             if threshold == -1:
                 threshold = self.max_y
             data_buffer = {
+                "trench": trench,
                 "track": [],
                 "lysis": [],
                 "label": [],
                 "lysis_frame": [],
-                "track_frame": []
+                "track_frame": [],
+                "coord": []
             }
-            for i in tqdm(range(len(frames) - 1)):
+            for i in tqdm(range(len(frames) - 1), desc="Tracking over frames: "):
                 self.current_frame = frames[i]
                 self.next_frame = frames[i + 1]
                 self.dt = self.next_frame - self.current_frame
                 if special_reporter is None:
-                    # Special reporter is to give an ability to track cells using a specified reporter,
+                    # Special reporter is to give an ability to track cells using a specified reporter intensity,
                     # e.g., infected by phage
-                    # Use the original channels here since no special reporter
                     current_cells = self.load_current_frame(threshold, self.channels)
                     if max_dpf > self.current_number_of_cells:
                         cells_furtures, cells_states = self.cells_simulator(current_cells, self.current_number_of_cells, p_sp=p_sp)
@@ -474,20 +484,28 @@ class LineageTrack:
                     next_cells = self.load_next_frame(threshold, self.channels)
                     # points = np.array([cell.set_coordinates(0) for cell in next_cells])
 
-                    if show_details:
+                    self.show_details = show_details
+                    if self.show_details:
                         print("looking at cells: ")
                         for x in range(len(current_cells)):
                             print(current_cells[x])
-
-                    self.score_futures(cells_furtures, cells_states, next_cells, mode=mode)
+                    self.mode = mode
+                    cells = self.score_futures(cells_furtures, cells_states, next_cells)
                     # index pointers to the current frame cells from next frame
                     self.lysis_cells()
 
-                    data_buffer["track"].extend(self.next_track)
-                    data_buffer["lysis"].extend(self.current_lysis)
-                    data_buffer["label"].extend([cell.label for cell in next_cells])
-                    data_buffer["lysis_frame"].extend([self.current_frame] * len(self.current_lysis))
-                    data_buffer["track_frame"].extend([self.next_frame] * len(self.next_track))
+                    if i == 0:
+                        data_buffer["track"].append([None] * self.current_number_of_cells)
+                        data_buffer["label"].append([cell.label for cell in current_cells])
+                        data_buffer["track_frame"].append(self.current_frame) # * self.current_number_of_cells)
+                        data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in cells])
+
+                    data_buffer["track"].append(self.next_track)
+                    data_buffer["lysis"].append(self.current_lysis)
+                    data_buffer["label"].append([cell.label for cell in next_cells])
+                    data_buffer["lysis_frame"].append(self.current_frame) # * len(self.current_lysis))
+                    data_buffer["track_frame"].append(self.next_frame) # * len(self.next_track))
+                    data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in next_cells])
 
                 else:
                     if special_reporter in self.channels:
@@ -500,16 +518,75 @@ class LineageTrack:
                 ### for testing ###
                 #if i == 0:
                 #    break
-            trench_track = [self.current_trench] * len(data_buffer["track_frame"])
-            self.track_df = pd.DataFrame(data={
-                "trench_id": trench_track,
-                "time_(mins)": data_buffer["track_frame"],
-                "label": data_buffer["label"],
-                "parent_label": data_buffer["track"]
-            })
-            trench_lyse = [self.current_trench] * len(data_buffer["lysis_frame"])
-            self.lysis_df = pd.DataFrame(data={
-                "trench_id": trench_lyse,
-                "time_(mins)": data_buffer["lysis_frame"],
-                "label": data_buffer["lysis"]
-            })
+            if ret_df:
+                trench_track = [data_buffer["trench"]] * len(data_buffer["track_frame"])
+                track_df = pd.DataFrame(data={
+                    "trench_id": trench_track,
+                    "time_(mins)": data_buffer["track_frame"],
+                    "label": data_buffer["label"],
+                    "parent_label": data_buffer["track"],
+                    "centroid": data_buffer["coord"]
+                })
+                trench_lyse = [data_buffer["trench"]] * len(data_buffer["lysis_frame"])
+                lysis_df = pd.DataFrame(data={
+                    "trench_id": trench_lyse,
+                    "time_(mins)": data_buffer["lysis_frame"],
+                    "label": data_buffer["lysis"]
+                })
+                return track_df, lysis_df
+            return data_buffer
+        else:
+            return f"""Specified trench id {trench} does not exist"""
+
+    def track_trenches(self, trenches=None, threshold=-1, max_dpf=1, mode="SeqMatch", p_sp=0,
+                       special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False):
+        if trenches is None:
+            trenches = self.trenches
+        results = Parallel(n_jobs=-1, verbose=3)(delayed(self.track_trench)
+                                                 (t, threshold, max_dpf, mode, p_sp, special_reporter, show_details)
+                                                 for t in trenches)
+        data_buffer = {
+            "trench_track": [],
+            "trench_lyse": [],
+            "track": [],
+            "lysis": [],
+            "label": [],
+            "lysis_frame": [],
+            "track_frame": [],
+            "coord": []
+        }
+        for r in results:
+            data_buffer["trench_track"].extend([r["trench"]] * len(r["track_frame"]))
+            data_buffer["trench_lyse"].extend([r["trench"]] * len(r["lysis_frame"]))
+            data_buffer["track"].extend(r["track"])
+            data_buffer["lysis"].extend(r["lysis"])
+            data_buffer["label"].extend(r["label"])
+            data_buffer["lysis_frame"].extend(r["lysis_frame"])
+            data_buffer["track_frame"].extend(r["track_frame"])
+            data_buffer["coord"].extend(r["coord"])
+        track_df = pd.DataFrame(data={
+            "trench_id": data_buffer["trench_track"],
+            "time_(mins)": data_buffer["track_frame"],
+            "label": data_buffer["label"],
+            "parent_label": data_buffer["track"],
+            "centroid": data_buffer["coord"]
+        })
+        lysis_df = pd.DataFrame(data={
+            "trench_id": data_buffer["trench_lyse"],
+            "time_(mins)": data_buffer["lysis_frame"],
+            "label": data_buffer["lysis"]
+        })
+        if ret_df:
+            return track_df, lysis_df
+        if not os.path.isdir(save_dir):
+            os.mkdir(save_dir)
+        file_track = "track_TR"
+        file_lyse = "lysis_TR"
+        for t in trenches:
+            file_track += "_" + str(int(t))
+            file_lyse += "_" + str(int(t))
+        file_track = os.path.join(save_dir, file_track) + ".csv"
+        file_lyse = os.path.join(save_dir, file_lyse) + ".csv"
+        track_df.to_csv(file_track)
+        lysis_df.to_csv(file_lyse)
+        return f"""output saved at {file_track} and {file_lyse}."""

@@ -19,18 +19,22 @@ class Cell:
         if reporter is not None:
             self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
         self.coord = []
-        self.devide = False
+        self.divide = False
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
 
-    def set_coordinates(self, division=0, growth=1, offset=0):
+    def set_coordinates(self, division=0, growth=1, offset=0, reset_original=False):
+        if reset_original:
+            self.coord = np.array([[self.major, self.centroid_y]])
+            return self.coord
         if division == 0:
             # self.coord = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
             #              self.local_centroid_y, self.orientation]
             self.coord = np.array([[self.major * growth, self.centroid_y + offset + self.major * (growth - 1) / 2]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
+            self.divide = False
             return self.coord
         elif division == 1:
             # self.coord = [self.area * 2, self.major * 2, self.minor, self.centroid_x,
