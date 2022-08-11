@@ -326,9 +326,9 @@ class LineageTrack:
 
     def calc_score(self, predicted_future, predicted_state, true_coord, max_score, matched_scenario, cells, shift=0):
         for i in range(len(predicted_future)):
-            print("the simulated scenario: {}".format(predicted_state[i]))
+            # print("the simulated scenario: {}".format(predicted_state[i]))
             pr = predicted_future[i][0]
-            print("with probability: {}".format(pr))
+            # print("with probability: {}".format(pr))
             points = []
             cells_arrangement = []
             for cell in predicted_future[i][1]:
@@ -352,7 +352,7 @@ class LineageTrack:
                 max_score = score
                 matched_scenario = predicted_state[i]
                 cells = copy.deepcopy(predicted_future[i][1])
-            print("score: {}".format(score))
+            # print("score: {}".format(score))
             # print("score_futures result: {}".format(label_track))
             # print(distance)
             # print("\n")

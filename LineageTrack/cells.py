@@ -22,7 +22,7 @@ class Cell:
         self.coord = []
         self.divide = False
         self.parent = None
-        self.label = None
+        self.bin_label = None
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
@@ -58,10 +58,10 @@ class Cell:
 
     def assign_label(self, second=False):
         if self.parent is not None:
-            if self.parent.label is not None:
+            if self.parent.bin_label is not None:
                 if not self.parent.divide:
-                    self.label = self.parent.label
+                    self.bin_label = self.parent.bin_label
                 elif second:
-                    self.label = self.parent.label.append(1)
+                    self.bin_label = self.parent.bin_label.append(1)
                 else:
-                    self.label = self.parent.label.append(0)
+                    self.bin_label = self.parent.bin_label.append(0)
