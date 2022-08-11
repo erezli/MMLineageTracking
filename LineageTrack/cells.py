@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class Cell:
     def __init__(self, properties, channels, reporter=None):
         self.trench = properties["trench_id"]
@@ -20,6 +21,8 @@ class Cell:
             self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
         self.coord = []
         self.divide = False
+        self.parent = None
+        self.label = None
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
@@ -49,3 +52,16 @@ class Cell:
             return self.coord
         else:
             raise Exception("specified division unknown")
+
+    def set_parent(self, parent_cell):
+        self.parent = parent_cell
+
+    def assign_label(self, second=False):
+        if self.parent is not None:
+            if self.parent.label is not None:
+                if not self.parent.divide:
+                    self.label = self.parent.label
+                elif second:
+                    self.label = self.parent.label.append(1)
+                else:
+                    self.label = self.parent.label.append(0)

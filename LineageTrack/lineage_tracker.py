@@ -17,96 +17,19 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 
 
-def reconstruct_array_from_str(str_version_of_array):
-    """
-    Reconstructs the string version of a numpy array which gets saved to csv format by pandas. - Charlies
-    """
-    unformatted_pixel_lists = str_version_of_array.split("\n")
-    formatted_pixel_lists = [re.split(r'[\]\[\s+]\s*', unformatted_pixel_lists[x]) for x in
-                             range(len(unformatted_pixel_lists))]
-    null_data_counter = 0
-    for count, row in enumerate(formatted_pixel_lists):
-        # new_row = [int(x) for x in row if x != ""]
-        new_row = []
-        for x in row:
-            if x != "":
-                try:
-                    new_row.append(int(x))
-                except ValueError:
-                    null_data_counter += 1
-                    # print(row)
-                    new_row.append(0)
-        formatted_pixel_lists[count] = new_row
-    if null_data_counter != 0:
-        # print(null_data_counter)
-        print("Some data is lost due to compression in image intensity column")
-    pixel_array = np.array(formatted_pixel_lists)
-
-    return pixel_array
-
-
-def nearest_neighbour(points, true_coord, mode="KDTree"):
-    if mode == "KDTree":
-        grid = KDTree(points)
-        # idx points to the index of points constructing the KDTree
-        distance, idx = grid.query(true_coord, workers=-1)
-        return distance, idx
-    if mode == "SeqMatch":
-        # match exclusively
-        d_mtx = distance_matrix(true_coord, points)
-        distance = []
-        idx = []
-        index_mtx = np.argsort(d_mtx, axis=1)
-        for row in range(index_mtx.shape[0]):
-            for col in range(index_mtx.shape[1]):
-                if index_mtx[row][col] not in idx:
-                    idx.append(index_mtx[row][col])
-                    distance.append(d_mtx[row][index_mtx[row][col]])
-                    break
-                elif col == index_mtx.shape[1] - 1:
-                    # for the case next frame has more cells than the simulated scenario
-                    idx.append(None)
-                    distance.append(d_mtx[row][col])
-        return distance, idx
-
-
 class LineageTrack:
-    def __init__(self, filepath, *args):
-        if os.path.isdir(filepath):
-            self.directory = filepath
-            self.files = glob(self.directory + "{}*".format(os.path.sep))
-        elif os.path.exists(filepath):
-            self.files = [filepath]
-        else:
-            raise Exception("specified file/directory not found")
-        for path in args:
-            if not os.path.exists(path):
-                print("invalid argument(s) - should be paths to the files or a single directory")
-            else:
-                self.files.append(path)
-        print("Looking for data at these locations:")
-        for f in self.files:
-            print(f)
-
-        ### load data ###
-        # df_list = [pd.read_csv(f, converters = {"image_intensity":reconstruct_array_from_str}) for f in self.files]
-        cols = list(pd.read_csv(self.files[0], nrows=1))
-        columnes_to_skip = list(["image_intensity", "orientation", "centroid_local-0", "centroid_local-1"])
-        df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columnes_to_skip],
-                               dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
-                                      "centroid-0": np.float32, "centroid-1": np.float32,
-                                      "orientation": np.float32, "intensity_mean": np.float32})
-                   # "trench_id": np.uint8, "time_(mins)": np.uint8, "label": np.uint8,
-                   # "centroid_local-0": np.float32, "centroid_local-1": np.float32}
-                   # converters={"image_intensity": reconstruct_array_from_str})
-                   for f in self.files]
+    def __init__(self, df_list, files=None):
+        self.files = files
         # Todo: use Zarr array to reduce memory usage
+        # Todo: add a trench object?
         self.channels = []
         # list_of_properties = ["trench_id", "time_(mins)", "label", "area", "major_axis_length",
         #                      "minor_axis_length", "centroid-0", "centroid-1",
         #                      "centroid_local-0", "centroid_local-1", "orientation"]
         list_of_properties = ["trench_id", "time_(mins)", "label", "area", "major_axis_length",
                               "minor_axis_length", "centroid-0", "centroid-1"]
+        if not isinstance(df_list, list):
+            df_list = [df_list]
         self.df = df_list[0][list_of_properties].copy()
         for d in df_list:
             channel = d.loc[1, "channel"]
@@ -129,7 +52,7 @@ class LineageTrack:
         self.next_frame = 0
         self.dt = 0
         self.current_number_of_cells = 0
-        self.buffer = None
+        self.buffer_next = None
 
         ### model parameters ###
         self.div_intervals = []
@@ -140,19 +63,55 @@ class LineageTrack:
         self.div_length_paras = (50, 20)
         self.mother_cell_collected = []
 
+        ### results ###
         self.next_track = []
         self.current_lysis = []
+        self.all_cells = dict()
 
         print("Finished loading the data")
         # print(f"Head: {self.df.head(1)}")
         print(self.df.shape)
 
+    @classmethod
+    def from_path(cls, filepath, *args):
+        if os.path.isdir(filepath):
+            directory = filepath
+            files = glob(directory + "{}*".format(os.path.sep))
+        elif os.path.exists(filepath):
+            files = [filepath]
+        else:
+            raise Exception("specified file/directory not found")
+        for path in args:
+            if not os.path.exists(path):
+                print("invalid argument(s) - should be paths to the files or a single directory")
+            else:
+                files.append(path)
+        print("Looking for data at these locations:")
+        for f in files:
+            print(f)
+        cols = list(pd.read_csv(files[0], nrows=1))
+        columnes_to_skip = list(["image_intensity", "orientation", "centroid_local-0", "centroid_local-1"])
+        df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columnes_to_skip],
+                               dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
+                                      "centroid-0": np.float32, "centroid-1": np.float32,
+                                      "orientation": np.float32, "intensity_mean": np.float32})
+                               # converters={"image_intensity": reconstruct_array_from_str})
+                   for f in files]
+        return cls(df_list=df_list, files=files)
+
     def __str__(self):
-        return f"""
-            Read {len(self.files)} files
-            Channels: {self.channels}
-            Properties for each cell: {self.properties}
-        """
+        if self.files:
+            return f"""
+                Read {len(self.files)} files
+                Channels: {self.channels}
+                Properties for each cell: {self.properties}
+            """
+        else:
+            return f"""
+                Load from Pandas DataFrames
+                Channels: {self.channels}
+                Properties for each cell: {self.properties}
+            """
 
     def get_mother_cell_growth(self, trench, plot=False):
         """
@@ -290,9 +249,9 @@ class LineageTrack:
         cells_state = []
         prob_0 = self.pr_div_lambda(0)
         prob_1 = self.pr_div_lambda(1)
-        if self.buffer is not None:
-            cells_futures.append([p_sp, copy.deepcopy(self.buffer)])
-            cells_state.append(["SP"] * len(self.buffer))
+        if self.buffer_next is not None:
+            cells_futures.append([p_sp, copy.deepcopy(self.buffer_next)])
+            cells_state.append(["SP"] * len(self.buffer_next))
         else:
             for i in range(len(cells_list)):
                 cells_list[i].set_coordinates()
@@ -317,24 +276,23 @@ class LineageTrack:
                     else:
                         print("There's something wrong with the list of combination of division and no division:")
                         print(com)
+                # Todo: probability of division - dependency between cells in a trench
                 cells_futures.append([prob * comb(self.current_number_of_cells, d), copy.deepcopy(cells_list)])
                 cells_state.append(["Growing" if x == 0 else "Divided!" for x in com])
         return cells_futures, cells_state
 
     def load_current_frame(self, threshold, channels):
-        if threshold == -1:
-            current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
-                                             & (self.df["time_(mins)"] == self.current_frame)].copy()
-
+        if self.buffer_next:
+            cells_list = self.buffer_next
         else:
             current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                              & (self.df["time_(mins)"] == self.current_frame)
                                              & (self.df["centroid-0"] < threshold)].copy()
-        # normalise? features do not have the same units - maybe consider only using geometrical features
-        # columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
-        # for c in columns:
-        #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
-        cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
+            # normalise? features do not have the same units - maybe consider only using geometrical features
+            # columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
+            # for c in columns:
+            #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
+            cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
         self.current_number_of_cells = len(cells_list)
         return cells_list
 
@@ -345,8 +303,8 @@ class LineageTrack:
         cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
         for i in range(len(cells_list)):
             cells_list[i].set_coordinates()
-        self.buffer = cells_list
-        return cells_list
+        self.buffer_next = cells_list
+        # return cells_list
 
     def compare_distance(self, distances, idx1, idx2, idx3):
         pointers = distances.idxmin(axis=1)
@@ -368,9 +326,9 @@ class LineageTrack:
 
     def calc_score(self, predicted_future, predicted_state, true_coord, max_score, matched_scenario, cells, shift=0):
         for i in range(len(predicted_future)):
-            # print("the simulated scenario: {}".format(predicted_state[i]))
+            print("the simulated scenario: {}".format(predicted_state[i]))
             pr = predicted_future[i][0]
-            # print("with probability: {}".format(pr))
+            print("with probability: {}".format(pr))
             points = []
             cells_arrangement = []
             for cell in predicted_future[i][1]:
@@ -394,13 +352,13 @@ class LineageTrack:
                 max_score = score
                 matched_scenario = predicted_state[i]
                 cells = copy.deepcopy(predicted_future[i][1])
-            # print("score: {}".format(score))
+            print("score: {}".format(score))
             # print("score_futures result: {}".format(label_track))
             # print(distance)
             # print("\n")
         return max_score, matched_scenario, cells
 
-    def score_futures(self, predicted_future, predicted_state, true_future):
+    def score_futures(self, predicted_future, predicted_state):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
@@ -408,15 +366,15 @@ class LineageTrack:
         matched_scenario = []
         cells = None
         mcell_current = predicted_future[0][1][0].coord
-        for cell in true_future:
-            true_coord.append([cell.coord[0][0], cell.coord[0][1] - true_future[0].coord[0][1]])
+        for cell in self.buffer_next:
+            true_coord.append([cell.coord[0][0], cell.coord[0][1] - self.buffer_next[0].coord[0][1]])
         true_coord = np.array(true_coord)
         # print(true_coord)
         max_score = 0
         max_score, matched_scenario, cells = self.calc_score(predicted_future, predicted_state, true_coord,
                                                              max_score, matched_scenario, cells, shift=0)
-        if abs(true_future[0].coord[0][1] - mcell_current[0][1]) >= \
-                ((mcell_current[0][0] + true_future[0].coord[0][0]) * 0.375):
+        if abs(self.buffer_next[0].coord[0][1] - mcell_current[0][1]) >= \
+                ((mcell_current[0][0] + self.buffer_next[0].coord[0][0]) * 0.375):
             # the mother cell could have lysed since the first cell shifts more than 3/4 of its length between frames
             if self.show_details:
                 print("mother cell lyses or possibly a huge shift in all cells at t = {}min".format(self.current_frame))
@@ -429,6 +387,18 @@ class LineageTrack:
             print("\n")
         for i in range(len(cells)):
             cells[i].set_coordinates(reset_original=True)
+        # two ways:
+        # 1
+        for cell, parent_label in zip(cells, self.current_track):
+            if len(self.all_cells[self.current_trench]) != 0:
+                if parent_label is not None:
+                    cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
+        # 2
+        for cell, parent_label in zip(self.buffer_next, self.next_track):
+            for c in cells:
+                if parent_label == c.label:
+                    cell.set_parent(c)
+        self.all_cells[self.current_trench].append(cells)
         return cells
 
     def lysis_cells(self):
@@ -454,7 +424,7 @@ class LineageTrack:
         @param res_df: If True, output pandas dataframe. If False, output dictionary structure.
         """
         if trench in self.trenches:
-            self.current_trench = trench
+            self.current_trench = int(trench)
             frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
             frames = sorted(list(set(frames)))
             if threshold == -1:
@@ -468,6 +438,7 @@ class LineageTrack:
                 "track_frame": [],
                 "coord": []
             }
+            self.all_cells[self.current_trench] = []
             for i in tqdm(range(len(frames) - 1), desc="Tracking over frames: "):
                 self.current_frame = frames[i]
                 self.next_frame = frames[i + 1]
@@ -481,8 +452,8 @@ class LineageTrack:
                     else:
                         cells_furtures, cells_states = self.cells_simulator(current_cells, max_dpf, p_sp=p_sp)
                     # this is a list of tuples (probability, cells) and cells is a list of object Cell
-                    next_cells = self.load_next_frame(threshold, self.channels)
-                    # points = np.array([cell.set_coordinates(0) for cell in next_cells])
+                    self.load_next_frame(threshold, self.channels)
+                    # points = np.array([cell.set_coordinates(0) for cell in self.buffer_next])
 
                     self.show_details = show_details
                     if self.show_details:
@@ -490,7 +461,8 @@ class LineageTrack:
                         for x in range(len(current_cells)):
                             print(current_cells[x])
                     self.mode = mode
-                    cells = self.score_futures(cells_furtures, cells_states, next_cells)
+                    self.current_track = self.next_track
+                    cells = self.score_futures(cells_furtures, cells_states)
                     # index pointers to the current frame cells from next frame
                     self.lysis_cells()
 
@@ -502,10 +474,10 @@ class LineageTrack:
 
                     data_buffer["track"].append(self.next_track)
                     data_buffer["lysis"].append(self.current_lysis)
-                    data_buffer["label"].append([cell.label for cell in next_cells])
+                    data_buffer["label"].append([cell.label for cell in self.buffer_next])
                     data_buffer["lysis_frame"].append(self.current_frame) # * len(self.current_lysis))
                     data_buffer["track_frame"].append(self.next_frame) # * len(self.next_track))
-                    data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in next_cells])
+                    data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in self.buffer_next])
 
                 else:
                     if special_reporter in self.channels:
@@ -590,3 +562,58 @@ class LineageTrack:
         track_df.to_csv(file_track)
         lysis_df.to_csv(file_lyse)
         return f"""output saved at {file_track} and {file_lyse}."""
+
+
+def nearest_neighbour(points, true_coord, mode="KDTree"):
+    if mode == "KDTree":
+        grid = KDTree(points)
+        # idx points to the index of points constructing the KDTree
+        distance, idx = grid.query(true_coord, workers=-1)
+        return distance, idx
+    if mode == "SeqMatch":
+        # match exclusively
+        d_mtx = distance_matrix(true_coord, points)
+        distance = []
+        idx = []
+        index_mtx = np.argsort(d_mtx, axis=1)
+        for row in range(index_mtx.shape[0]):
+            for col in range(index_mtx.shape[1]):
+                if index_mtx[row][col] not in idx:
+                    idx.append(index_mtx[row][col])
+                    distance.append(d_mtx[row][index_mtx[row][col]])
+                    break
+                elif col == index_mtx.shape[1] - 1:
+                    # for the case next frame has more cells than the simulated scenario
+                    idx.append(None)
+                    distance.append(d_mtx[row][col])
+        return distance, idx
+
+
+### from Charlie ###
+def reconstruct_array_from_str(str_version_of_array):
+    """
+    Reconstructs the string version of a numpy array which gets saved to csv format by pandas.
+    """
+    unformatted_pixel_lists = str_version_of_array.split("\n")
+    formatted_pixel_lists = [re.split(r'[\]\[\s+]\s*', unformatted_pixel_lists[x]) for x in
+                             range(len(unformatted_pixel_lists))]
+    null_data_counter = 0
+    for count, row in enumerate(formatted_pixel_lists):
+        # new_row = [int(x) for x in row if x != ""]
+        new_row = []
+        for x in row:
+            if x != "":
+                try:
+                    new_row.append(int(x))
+                except ValueError:
+                    null_data_counter += 1
+                    # print(row)
+                    new_row.append(0)
+        formatted_pixel_lists[count] = new_row
+    if null_data_counter != 0:
+        # print(null_data_counter)
+        print("Some data is lost due to compression in image intensity column")
+    pixel_array = np.array(formatted_pixel_lists)
+
+    return pixel_array
+###

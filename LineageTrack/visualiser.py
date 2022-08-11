@@ -5,6 +5,7 @@ import numpy as np
 
 template_mask = ['xy', '_mCherry_TR', '_T', '-_epoch-20_prob-99.png']
 
+
 def generate_file_name(template, pre, FOV, trench, time):
     # e.g., xy000_mCherry_TR1_T0000-_epoch-20_prob-99.png
     path = str(pre) + template[0] + str(FOV) + template[1] + str(int(trench)) + template[2] + str(time) + template[3]
@@ -52,8 +53,8 @@ class Visualiser:
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
-                    path1 = generate_file_name(template, "", self.FOV, t, frame)
-                    mask = cv.imread(mask_dir + os.path.sep + path1)
+                    read_path = generate_file_name(template, "", self.FOV, t, frame)
+                    mask = cv.imread(mask_dir + os.path.sep + read_path)
                     # print(mask.shape)
                     for c in range(len(cells.at[0, "label"])):
                         position_1 = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
@@ -74,7 +75,47 @@ class Visualiser:
                                 middle_position = (middle_position[0], middle_position[1] + 7)
                                 cv.putText(mask, f"cell no{int(cells.at[0, 'parent_label'][c])}",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-                    path2 = generate_file_name(template, "labelled_", self.FOV, t, frame)
+                    write_path = generate_file_name(template, "labelled_", self.FOV, t, frame)
                     if not os.path.isdir(save_dir):
                         os.mkdir(save_dir)
-                    cv.imwrite(save_dir + os.path.sep + path2, mask)
+                    cv.imwrite(save_dir + os.path.sep + write_path, mask)
+            if mode == "landscape":
+                offset = 0
+                landscape = None
+                mask_buffer = None
+                for i in range(len(times) - 1):
+                    time1 = times[i]
+                    time2 = times[i + 1]
+                    frame1 = "%04d" % i
+                    frame2 = "%04d" % (i + 1)
+                    cells1 = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                              (self.track_df["time_(mins)"] == time1)].copy()
+                    cells1.reset_index(drop=True, inplace=True)
+                    cells2 = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                               (self.track_df["time_(mins)"] == time2)].copy()
+                    cells2.reset_index(drop=True, inplace=True)
+
+                    path2 = generate_file_name(template, "", self.FOV, t, frame2)
+                    mask2 = cv.imread(mask_dir + os.path.sep + path2)
+                    if i == 0:
+                        path1 = generate_file_name(template, "", self.FOV, t, frame1)
+                        mask1 = cv.imread(mask_dir + os.path.sep + path1)
+                        landscape = mask1
+                    else:
+                        mask1 = mask_buffer
+                    landscape = np.concatenate((landscape, mask2), axis=1)
+                    mask_buffer = mask2
+                    for c in range(len(cells2.at[0, "label"])):
+                        if cells2.at[0, "parent_label"][c] is not None:
+                            parent = int(cells2.at[0, "parent_label"][c] - 1)
+                            position1 = (round(cells2.at[0, "centroid"][c][0] + offset + mask1.shape[1]),
+                                         round(cells2.at[0, "centroid"][c][1]))
+                            position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
+                                         round(cells1.at[0, "centroid"][parent][1]))
+                            cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
+                    offset += mask1.shape[1]
+                write_path = generate_file_name(template, "landscape_", self.FOV, t, "")
+                if not os.path.isdir(save_dir):
+                    os.mkdir(save_dir)
+                cv.imwrite(save_dir + os.path.sep + write_path, landscape)
+                print(f"saved as {save_dir + os.path.sep + write_path}")
