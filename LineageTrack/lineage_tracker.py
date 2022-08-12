@@ -387,21 +387,34 @@ class LineageTrack:
             print("\n")
         for i in range(len(cells)):
             cells[i].set_coordinates(reset_original=True)
-        # two ways:
-        # 1
-        for cell, parent_label in zip(cells, self.current_track):
-            if len(self.all_cells[self.current_trench]) != 0:
+        # two ways to give the cell its parent, daughter, barcode attribute:
+        if len(self.all_cells[self.current_trench]) != 0:   # not the first frame
+            # 1 - update previous frame cells from the previous tracking results (this will miss the very last frame)
+            for cell, parent_label in zip(cells, self.current_track):
                 if parent_label is not None:
+                    cell.parent_label = parent_label
                     cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
-        # 2
-        for cell, parent_label in zip(self.buffer_next, self.next_track):
-            for c in cells:
-                if parent_label == c.label:
-                    cell.set_parent(c)
+                    self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
+        else:
+            # initialise the barcode for the very first two cells in the first frame
+            cells[0].barcode = list([0])
+            cells[1].barcode = list([1])
+
+        # 2 - update next frame cells from the current tracking results
+        for cell_next, parent_label in zip(self.buffer_next, self.next_track):
+            cell_next.parent_label = parent_label
+            cell_next.set_parent(cells[int(parent_label) - 1])
+            cells[int(parent_label) - 1].set_daughters(cell_next)
+
+        for cell in cells:
+            cell.assign_barcode(to_whom="daughter", max_bit=8)
+            cell.barcode_to_binary(max_bit=8)
+
         self.all_cells[self.current_trench].append(cells)
         return cells
 
     def lysis_cells(self):
+        # Todo: set cells object attribute as well
         idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i + 1 for i in idx_list if i + 1 not in self.next_track]
 
@@ -421,7 +434,7 @@ class LineageTrack:
         @param p_sp: Probability of all cells entering stationary phase, i.e., stop growing.
         @param special_reporter:
         @param show_details: Display more details about the process
-        @param res_df: If True, output pandas dataframe. If False, output dictionary structure.
+        @param ret_df: If True, output pandas dataframe. If False, output dictionary structure.
         """
         if trench in self.trenches:
             self.current_trench = int(trench)
@@ -436,7 +449,8 @@ class LineageTrack:
                 "label": [],
                 "lysis_frame": [],
                 "track_frame": [],
-                "coord": []
+                "coord": [],
+                "barcode": []
             }
             self.all_cells[self.current_trench] = []
             for i in tqdm(range(len(frames) - 1), desc="Tracking over frames: "):
@@ -478,6 +492,14 @@ class LineageTrack:
                     data_buffer["lysis_frame"].append(self.current_frame) # * len(self.current_lysis))
                     data_buffer["track_frame"].append(self.next_frame) # * len(self.next_track))
                     data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in self.buffer_next])
+                    data_buffer["barcode"].append([cell.barcode for cell in cells])
+
+                    if i == len(frames) - 2:
+                        barcode_list = []
+                        for cell in self.buffer_next:
+                            cell.barcode_to_binary(max_bit=8)
+                            barcode_list.append(cell.barcode)
+                        data_buffer["barcode"].append(barcode_list)
 
                 else:
                     if special_reporter in self.channels:
@@ -561,6 +583,7 @@ class LineageTrack:
         file_lyse = os.path.join(save_dir, file_lyse) + ".csv"
         track_df.to_csv(file_track)
         lysis_df.to_csv(file_lyse)
+        # Todo: save the list of Cell objects to files using `pickle`
         return f"""output saved at {file_track} and {file_lyse}."""
 
 
@@ -589,7 +612,7 @@ def nearest_neighbour(points, true_coord, mode="KDTree"):
         return distance, idx
 
 
-### from Charlie ###
+# from Charlie
 def reconstruct_array_from_str(str_version_of_array):
     """
     Reconstructs the string version of a numpy array which gets saved to csv format by pandas.
@@ -616,4 +639,3 @@ def reconstruct_array_from_str(str_version_of_array):
     pixel_array = np.array(formatted_pixel_lists)
 
     return pixel_array
-###

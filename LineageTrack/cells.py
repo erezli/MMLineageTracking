@@ -21,8 +21,10 @@ class Cell:
             self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
         self.coord = []
         self.divide = False
+        self.parent_label = None
         self.parent = None
-        self.bin_label = None
+        self.daughters = None
+        self.barcode = None
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
@@ -56,12 +58,33 @@ class Cell:
     def set_parent(self, parent_cell):
         self.parent = parent_cell
 
-    def assign_label(self, second=False):
-        if self.parent is not None:
-            if self.parent.bin_label is not None:
-                if not self.parent.divide:
-                    self.bin_label = self.parent.bin_label
-                elif second:
-                    self.bin_label = self.parent.bin_label.append(1)
-                else:
-                    self.bin_label = self.parent.bin_label.append(0)
+    def set_daughters(self, daughter):
+        if self.daughters is None:
+            self.daughters = daughter
+        else:
+            self.daughters = (self.daughters, daughter)
+
+    def assign_barcode(self, to_whom="daughter", second=False, max_bit=8):
+        if to_whom == "daughter":
+            if (self.barcode is not None) and (self.daughters is not None):
+                if len(self.barcode) < max_bit:
+                    if isinstance(self.daughters, tuple):
+                        self.daughters[0].barcode = self.barcode + [0]
+                        self.daughters[1].barcode = self.barcode + [1]
+                    else:
+                        self.daughters.barcode = self.barcode
+        elif to_whom == "self":
+            if (self.parent is not None) and (self.parent.barcode is not None):
+                if len(self.parent.barcode) < max_bit:
+                    if not self.parent.divide:
+                        self.barcode = self.parent.barcode
+                    elif second:
+                        self.barcode = self.parent.barcode + [1]
+                    else:
+                        self.barcode = self.parent.barcode + [0]
+
+    def barcode_to_binary(self, max_bit=8):
+        if self.barcode:
+            while len(self.barcode) < max_bit:
+                self.barcode.append(0)
+            self.barcode = bin(int("".join(map(str, self.barcode)), 2))
