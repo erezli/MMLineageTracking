@@ -387,14 +387,15 @@ class LineageTrack:
             print("\n")
         for i in range(len(cells)):
             cells[i].set_coordinates(reset_original=True)
-        # two ways to give the cell its parent, daughter, barcode attribute:
+        # two ways to give the cell its parent, daughter attribute:
         if len(self.all_cells[self.current_trench]) != 0:   # not the first frame
-            # 1 - update previous frame cells from the previous tracking results (this will miss the very last frame)
-            for cell, parent_label in zip(cells, self.current_track):
-                if parent_label is not None:
-                    cell.parent_label = parent_label
-                    cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
-                    self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
+            # # 1 - update previous frame cells from the previous tracking results (this will miss the very last frame)
+            # for cell, parent_label in zip(cells, self.current_track):
+            #     if parent_label is not None:
+            #         cell.parent_label = parent_label
+            #         cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
+            #         self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
+            pass
         else:
             # initialise the barcode for the very first two cells in the first frame
             cells[0].barcode = list([0])
@@ -406,6 +407,7 @@ class LineageTrack:
             cell_next.set_parent(cells[int(parent_label) - 1])
             cells[int(parent_label) - 1].set_daughters(cell_next)
 
+        # assign barcode to some cells
         for cell in cells:
             cell.assign_barcode(to_whom="daughter", max_bit=8)
             cell.barcode_to_binary(max_bit=8)
