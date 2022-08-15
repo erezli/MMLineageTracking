@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tifffile
 from skimage.measure import regionprops_table, label
@@ -55,3 +56,16 @@ def combine_data(data_list):
             all_data[key].append(data[key])
     df = pd.DataFrame(data)
     return df
+
+
+def generate_csv(label_dir, intensity_dir, save_dir="./temp/", min_size=80):
+    label_images = [f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))]
+    intensity_images = [f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))]
+    data_list = []
+    dt = 3
+    for i in range(len(label_images)):
+        data = get_cell_props(label_images[i], intensity_images[i], min_size=min_size)
+        data = add_information(data, channel="PC", trench_id=1, time=i*dt, identity=intensity_images[i])
+        data_list.append(data)
+    df = combine_data(data_list)
+    df.to_csv(os.path.join(save_dir, "symbac_test.csv"))

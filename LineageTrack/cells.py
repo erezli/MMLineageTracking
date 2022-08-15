@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 
 
 class Cell:
@@ -14,17 +15,18 @@ class Cell:
         # self.local_centroid_y = properties["centroid_local-0"]
         # self.local_centroid_x = properties["centroid_local-1"]
         # self.orientation = properties["orientation"]
-        self.channel_intensities = []
-        for c in channels:
-            self.channel_intensities.append(properties["{}_intensity_mean".format(c)])
-        if reporter is not None:
-            self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
+        # self.channel_intensities = []
+        # for c in channels:
+        #     self.channel_intensities.append(properties["{}_intensity_mean".format(c)])
+        # if reporter is not None:
+        #     self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
         self.coord = []
         self.divide = False
         self.parent_label = None
         self.parent = None
         self.daughters = None
         self.barcode = None
+        self.poles = None
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
@@ -68,23 +70,37 @@ class Cell:
         if to_whom == "daughter":
             if (self.barcode is not None) and (self.daughters is not None):
                 if len(self.barcode) < max_bit:
-                    if isinstance(self.daughters, tuple):
-                        self.daughters[0].barcode = self.barcode + [0]
-                        self.daughters[1].barcode = self.barcode + [1]
+                    if self.divide:
+                        if isinstance(self.daughters, tuple):
+                            self.daughters[0].barcode = self.barcode + [0]
+                            self.daughters[1].barcode = self.barcode + [1]
+                        else:
+                            self.daughters.barcode = self.barcode + [0]
                     else:
-                        self.daughters.barcode = self.barcode
+                        self.daughters.barcode = copy.deepcopy(self.barcode)
         elif to_whom == "self":
             if (self.parent is not None) and (self.parent.barcode is not None):
                 if len(self.parent.barcode) < max_bit:
                     if not self.parent.divide:
-                        self.barcode = self.parent.barcode
+                        self.barcode = copy.deepcopy(self.parent.barcode)
                     elif second:
                         self.barcode = self.parent.barcode + [1]
                     else:
                         self.barcode = self.parent.barcode + [0]
 
     def barcode_to_binary(self, max_bit=8):
-        if self.barcode:
+        if isinstance(self.barcode, list):
             while len(self.barcode) < max_bit:
                 self.barcode.append(0)
             self.barcode = bin(int("".join(map(str, self.barcode)), 2))
+
+    def set_generation(self):
+        if (self.poles is not None) and (self.daughters is not None):
+            if self.divide:
+                if isinstance(self.daughters, tuple):
+                    self.daughters[0].poles = (self.poles[0] + 1, 0)
+                    self.daughters[1].poles = (0, self.poles[1] + 1)
+                else:
+                    self.daughters.poles = (self.poles[0] + 1, 0)
+            else:
+                self.daughters.poles = copy.deepcopy(self.poles)
