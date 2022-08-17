@@ -7,8 +7,7 @@ from skimage.morphology import remove_small_objects
 import pandas as pd
 
 
-### --------------------------------------------from Charlie------------------------------------------------------- ###
-def get_cell_props(label_img_path, intensity_img_path, min_size=80):
+def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited from Charlie's function
     """
     Returns the region properties specified in this function for label and intensity image pair.
     Objects smaller than a minimum size are unlikely to be cells and are removed from the analysis.
@@ -24,9 +23,10 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):
     """
     # read label image
     label_img = imread(label_img_path)
-    label_img = label_img.astype(bool)
-    label_img = remove_small_objects(label_img, min_size=min_size)
-    labels = label(label_img, connectivity=1)
+    #label_img = label_img.astype(bool)
+    #label_img = remove_small_objects(label_img, min_size=min_size)
+    #labels = label(label_img, connectivity=1)
+    labels = label_img
 
     # read intensity image
     intensity_img = tifffile.imread(intensity_img_path)
@@ -34,17 +34,19 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):
     data = regionprops_table(labels, intensity_img, properties=(
         "area", "major_axis_length", "minor_axis_length", "centroid",
         "intensity_mean", "label", "centroid_local", "image_intensity", "orientation"))
+    order = sorted(range(len(data["centroid-0"])), key=lambda k: data["centroid-0"][k])
+    for keys in data:
+        data[keys] = [data[keys][i] for i in order]
     return data
 
 
-### --------------------------------------------------------------------------------------------------------------- ###
-
-
 def add_information(data, channel, trench_id, time, identity):
-    data["channel"] = channel
-    data["trench_id"] = trench_id
-    data["time_(mins)"] = time
-    data["identity"] = identity
+    length = len(data["area"])
+    data["label"] = [int(i + 1) for i in range(length)]
+    data["channel"] = [channel] * length
+    data["trench_id"] = [trench_id] * length
+    data["time_(mins)"] = [time] * length
+    data["identity"] = [identity] * length
     return data
 
 
@@ -53,19 +55,23 @@ def combine_data(data_list):
     for key in data_list[0]:
         all_data[key] = []
         for data in data_list:
-            all_data[key].append(data[key])
-    df = pd.DataFrame(data)
+            all_data[key].extend(data[key])
+    df = pd.DataFrame(all_data)
     return df
 
 
 def generate_csv(label_dir, intensity_dir, save_dir="./temp/", min_size=80):
-    label_images = [f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))]
-    intensity_images = [f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))]
+    label_images = sorted([f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))])
+    intensity_images = sorted([f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))])
     data_list = []
-    dt = 3
+    dt = 1
     for i in range(len(label_images)):
-        data = get_cell_props(label_images[i], intensity_images[i], min_size=min_size)
+        data = get_cell_props(os.path.join(label_dir, label_images[i]),
+                              os.path.join(intensity_dir, intensity_images[i]), min_size=min_size)
         data = add_information(data, channel="PC", trench_id=1, time=i*dt, identity=intensity_images[i])
         data_list.append(data)
     df = combine_data(data_list)
+    if not os.path.isdir(save_dir):
+        os.mkdir(save_dir)
     df.to_csv(os.path.join(save_dir, "symbac_test.csv"))
+    return f"saved to {os.path.join(save_dir, 'symbac_test.csv')}"

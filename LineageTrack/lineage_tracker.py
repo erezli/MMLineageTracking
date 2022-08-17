@@ -156,7 +156,7 @@ class LineageTrack:
                     plt.show()
                 return mother_cell
 
-    def find_division(self, trench, plot=True):
+    def find_division(self, trench, threshold=1, distance=3, plot=True):
         """
         find and label the division by searching for peaks in the length-time plot, may need user to slice out the bad
         results
@@ -165,7 +165,7 @@ class LineageTrack:
         is a 1D array for index of the peaks
         """
         mcell = self.get_mother_cell_growth(trench)
-        idx_p = find_peaks(mcell[:, 1], threshold=1, distance=3)
+        idx_p = find_peaks(mcell[:, 1], threshold=threshold, distance=distance)
         peaks = [mcell[p, :] for p in idx_p[0]]
         peaks = np.array(peaks)
         if plot:
@@ -351,7 +351,23 @@ class LineageTrack:
             distance, idx = nearest_neighbour(points, true_coord, mode=self.mode)
             # score = pr / np.sum(distance)
             # for stronger influence of distance
-            score = pr ** 0.5 / ((np.sum(distance)) ** 2)
+            try:
+                score = pr ** 0.5 / ((np.sum(distance)) ** 2)
+            except RuntimeWarning:
+                print("wow distance too small?")
+                print((np.sum(distance)))
+                score = float("inf")
+                label_track = []
+                for j in idx:
+                    if j is not None:
+                        label_track.append(cells_arrangement[j].label)
+                    else:
+                        label_track.append(None)
+                self.next_track = label_track
+                max_score = score
+                matched_scenario = predicted_state
+                cells = copy.deepcopy(predicted_future[1])
+                break
             if score > max_score:
                 label_track = []
                 for j in idx:
@@ -561,7 +577,8 @@ class LineageTrack:
                        special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False):
         if trenches is None:
             trenches = self.trenches
-        results = Parallel(n_jobs=-1, verbose=5)(delayed(self.track_trench)
+        # Todo: use more workers for multiple trenches
+        results = Parallel(n_jobs=1, verbose=5)(delayed(self.track_trench)
                                                  (t, threshold, max_dpf, mode, p_sp, special_reporter, show_details)
                                                  for t in trenches)
         data_buffer = {

@@ -3,13 +3,21 @@ import cv2 as cv
 import pandas as pd
 import numpy as np
 import ast
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
 
 template_mask = ['xy', '_mCherry_TR', '_T', '-_epoch-20_prob-99.png']
 
 
-def generate_file_name(template, pre, FOV, trench, time):
+def generate_file_name(template, pre=None, FOV=None, trench=None, time=None, mode="exp"):
     # e.g., xy000_mCherry_TR1_T0000-_epoch-20_prob-99.png
-    path = str(pre) + template[0] + str(FOV) + template[1] + str(int(trench)) + template[2] + str(time) + template[3]
+    if mode == "exp":
+        path = str(pre) + template[0] + str(FOV) + template[1] + str(int(trench)) + template[2] + str(time) + template[3]
+
+    # for SyMBac data - testing purpose #
+    if mode == "SyMBac":
+        path = template[0] + str(time) + ".tif"
     return path
 
 
@@ -22,6 +30,8 @@ class Visualiser:
         self.lysis_df = lysis_df
         self.cells = cells
         self.trenches = sorted(list(set(self.track_df.loc[:, "trench_id"])))
+        flat_list_y = [item[1] for sublist in self.track_df.loc[:, "centroid"] for item in sublist]
+        self.max_y = max(flat_list_y)
 
     @classmethod
     def from_path(cls, FOV, filepath_t, filepath_l):
@@ -39,12 +49,26 @@ class Visualiser:
         df_l = pd.read_csv(filepath_l, converters={"label": ast.literal_eval})
         return cls(FOV, df_t, df_l)
 
-    def label_images(self, mask_dir, mode="connect_daughter", save_dir="./temp/labelled_masks/", template=template_mask):
+    def get_labelled_image(self, read_dir, frames, trench, pre="barcoded_", template=template_mask, template_mode="exp"):
+        fig, ax = plt.subplots(1, len(frames), figsize=(100, 100))
+        ax_flat = ax.flatten()
+        for i in range(len(frames)):
+            frame = "%04d" % frames[i]
+            path = generate_file_name(template, pre, self.FOV, trench, frame, mode=template_mode)
+            img = mpimg.imread(read_dir + path)
+            ax_flat[i].imshow(img)
+            ax_flat[i].set_ylim(300)
+
+    def label_images(self, image_dir, mode="connect_daughter", save_dir="./temp/labelled_masks/",
+                     template=template_mask, template_mode="exp", show_other=True, for_frames=None):
         """
 
+        @param for_frames:
+        @param show_other:
+        @param template_mode:
         @param save_dir:
-        @param mask_dir:
-        @param mode: connect_daughter; binary
+        @param image_dir:
+        @param mode: connect_daughter; landscape-line; barcode; landscape-gray-scale; generation-by-poles
         @param template:
         @return:
         """
@@ -63,36 +87,37 @@ class Visualiser:
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
-                    read_path = generate_file_name(template, "", self.FOV, t, frame)
-                    mask = cv.imread(mask_dir + os.path.sep + read_path)
-                    # print(mask.shape)
+                    read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
+                    image = cv.imread(image_dir + os.path.sep + read_path)
+                    # print(image.shape)
                     for c in range(len(cells.at[0, "label"])):
                         position_1 = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
-                        cv.drawMarker(mask, position_1, (255, 0, 0))
+                        cv.drawMarker(image, position_1, (255, 0, 0))
                         if c > 0:
                             if (cells.at[0, "parent_label"][c] == cells.at[0, "parent_label"][c - 1]) & \
                                     (cells.at[0, "parent_label"][c] is not None):
                                 position_2 = (round(cells.at[0, "centroid"][c - 1][0]),
                                               round(cells.at[0, "centroid"][c - 1][1]))
-                                cv.line(mask, position_1, position_2, (0, 255, 0), thickness=2)
+                                cv.line(image, position_1, position_2, (0, 255, 0), thickness=2)
                                 middle_position = (round((position_1[0] + position_2[0])/2) + 5,
                                                    round((position_1[1] + position_2[1])/2) - 7)
-                                cv.putText(mask, "divide",
+                                cv.putText(image, "divide",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                                 middle_position = (middle_position[0], middle_position[1] + 7)
-                                cv.putText(mask, "from",
+                                cv.putText(image, "from",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                                 middle_position = (middle_position[0], middle_position[1] + 7)
-                                cv.putText(mask, f"cell no{int(cells.at[0, 'parent_label'][c])}",
+                                cv.putText(image, f"cell no{int(cells.at[0, 'parent_label'][c])}",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-                    write_path = generate_file_name(template, "labelled_", self.FOV, t, frame)
+                    write_path = generate_file_name(template, "labelled_", self.FOV, t, frame, mode=template_mode)
                     if not os.path.isdir(save_dir):
                         os.mkdir(save_dir)
-                    cv.imwrite(save_dir + os.path.sep + write_path, mask)
+                    cv.imwrite(save_dir + os.path.sep + write_path, image)
+
             elif mode == "landscape-line":
                 offset = 0
                 landscape = None
-                mask_buffer = None
+                image_buffer = None
                 for i in range(len(times) - 1):
                     time1 = times[i]
                     time2 = times[i + 1]
@@ -105,34 +130,35 @@ class Visualiser:
                                                (self.track_df["time_(mins)"] == time2)].copy()
                     cells2.reset_index(drop=True, inplace=True)
 
-                    path2 = generate_file_name(template, "", self.FOV, t, frame2)
-                    mask2 = cv.imread(mask_dir + os.path.sep + path2)
-                    cv.putText(mask2, "t={}".format(time2),
-                               (10, 15), cv.FONT_HERSHEY_COMPLEX, 0.5, (0, 255, 0))
+                    path2 = generate_file_name(template, "", self.FOV, t, frame2, mode=template_mode)
+                    image2 = cv.imread(image_dir + os.path.sep + path2)
+                    cv.putText(image2, "t={}".format(time2),
+                               (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     if i == 0:
-                        path1 = generate_file_name(template, "", self.FOV, t, frame1)
-                        mask1 = cv.imread(mask_dir + os.path.sep + path1)
-                        cv.putText(mask1, "t={}".format(time1),
-                                   (10, 15), cv.FONT_HERSHEY_COMPLEX, 0.5, (0, 255, 0))
-                        landscape = mask1
+                        path1 = generate_file_name(template, "", self.FOV, t, frame1, mode=template_mode)
+                        image1 = cv.imread(image_dir + os.path.sep + path1)
+                        cv.putText(image1, "t={}".format(time1),
+                                   (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                        landscape = image1
                     else:
-                        mask1 = mask_buffer
-                    landscape = np.concatenate((landscape, mask2), axis=1)
-                    mask_buffer = mask2
+                        image1 = image_buffer
+                    landscape = np.concatenate((landscape, image2), axis=1)
+                    image_buffer = image2
                     for c in range(len(cells2.at[0, "label"])):
                         if cells2.at[0, "parent_label"][c] is not None:
                             parent = int(cells2.at[0, "parent_label"][c]) - 1
-                            position1 = (round(cells2.at[0, "centroid"][c][0] + offset + mask1.shape[1]),
+                            position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
                                          round(cells2.at[0, "centroid"][c][1]))
                             position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
                                          round(cells1.at[0, "centroid"][parent][1]))
                             cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
-                    offset += mask1.shape[1]
-                write_path = generate_file_name(template, "landscape_line_", self.FOV, t, "")
+                    offset += image1.shape[1]
+                write_path = generate_file_name(template, "landscape_line_", self.FOV, t, "", mode=template_mode)
                 if not os.path.isdir(save_dir):
                     os.mkdir(save_dir)
                 cv.imwrite(save_dir + os.path.sep + write_path, landscape)
                 print(f"saved as {save_dir + os.path.sep + write_path}")
+
             elif mode == "barcode":
                 for i in range(len(times)):
                     time = times[i]
@@ -140,76 +166,99 @@ class Visualiser:
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
-                    read_path = generate_file_name(template, "", self.FOV, t, frame)
-                    mask = cv.imread(mask_dir + os.path.sep + read_path)
-                    for c in range(len(cells.at[0, "label"])):
-                        if cells.at[0, "barcode"][c] is not None:
-                            position = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
-                            cv.putText(mask, "{:08b}".format(int(cells.at[0, "barcode"][c], 2)),
-                                       position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-                    write_path = generate_file_name(template, "barcoded_", self.FOV, t, frame)
-                    if not os.path.isdir(save_dir):
-                        os.mkdir(save_dir)
-                    cv.imwrite(save_dir + os.path.sep + write_path, mask)
-            elif mode == "landscape-gray-scale":
-                landscape = None
-                for i in range(len(times) - 1):
-                    if i == 0:
-                        time1 = times[i]
-                        frame1 = "%04d" % i
-                        cells1 = self.track_df.loc[(self.track_df["trench_id"] == t) &
-                                                   (self.track_df["time_(mins)"] == time1)].copy()
-                        cells1.reset_index(drop=True, inplace=True)
-                        path1 = generate_file_name(template, "", self.FOV, t, frame1)
-                        mask1 = cv.imread(mask_dir + os.path.sep + path1, cv.IMREAD_GRAYSCALE)
-                        contours, hierarchy = cv.findContours(mask1, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
-                        rev_con = ()
-                        for k in reversed(contours):
-                            rev_con = rev_con + (k,)
-                        cv.putText(mask1, "t={}".format(time1),
-                                   (10, 15), cv.FONT_HERSHEY_COMPLEX, 0.5, 180)
-                        max_gray = int("11111111", 2)
-                        mask1 = cv.cvtColor(mask1, cv.COLOR_GRAY2RGB)
-                        for c in range(len(cells1.at[0, "label"])):
-                            barcode = cells1.at[0, "barcode"][c]
-                            if barcode is not None:
-                                gray_scale = 200 - (int(barcode, 2) / max_gray) * 200
-                                cv.drawContours(mask1, rev_con, contourIdx=c,
-                                                color=(int(gray_scale), int(gray_scale), int(gray_scale)), thickness=-1)
-                                position = (round(cells1.at[0, "centroid"][c][0]), round(cells1.at[0, "centroid"][c][1]))
-                                cv.putText(mask1, "{:08b}".format(int(cells1.at[0, "barcode"][c], 2)),
-                                           position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
-                        landscape = mask1
-                    time2 = times[i + 1]
-                    frame2 = "%04d" % (i + 1)
-                    cells2 = self.track_df.loc[(self.track_df["trench_id"] == t) &
-                                               (self.track_df["time_(mins)"] == time2)].copy()
-                    cells2.reset_index(drop=True, inplace=True)
-                    path2 = generate_file_name(template, "", self.FOV, t, frame2)
-                    mask2 = cv.imread(mask_dir + os.path.sep + path2, cv.IMREAD_GRAYSCALE)
-                    contours, hierarchy = cv.findContours(mask2, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+                    read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
+                    image = cv.imread(image_dir + os.path.sep + read_path, cv.IMREAD_GRAYSCALE)
+                    contours, _ = cv.findContours(image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
                     rev_con = ()
                     for k in reversed(contours):
                         rev_con = rev_con + (k,)
-                    cv.putText(mask2, "t={}".format(time2),
-                               (10, 15), cv.FONT_HERSHEY_COMPLEX, 0.5, 180)
-                    max_gray = int("11111111", 2)
-                    mask2 = cv.cvtColor(mask2, cv.COLOR_GRAY2RGB)
-                    for c in range(len(cells2.at[0, "label"])):
-                        barcode = cells2.at[0, "barcode"][c]
-                        if barcode is not None:
-                            gray_scale = 200 - (int(barcode, 2) / max_gray) * 200
-                            cv.drawContours(mask2, rev_con, contourIdx=c,
-                                            color=(int(gray_scale), int(gray_scale), int(gray_scale)), thickness=-1)
-                            position = (round(cells2.at[0, "centroid"][c][0]), round(cells2.at[0, "centroid"][c][1]))
-                            cv.putText(mask2, "{:08b}".format(int(cells2.at[0, "barcode"][c], 2)),
+                    image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
+                    flat_list_barcode = [int(item, 2)
+                                         for sublist in self.track_df.loc[:, "barcode"]
+                                         for item in sublist if item is not None]
+                    flat_list_barcode = sorted(list(set(flat_list_barcode)))
+                    # max_gray = max(flat_list_barcode)
+                    for c in range(len(cells.at[0, "label"])):
+                        if cells.at[0, "barcode"][c] is not None:
+                            position = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
+                            cv.putText(image, "{:08b}".format(int(cells.at[0, "barcode"][c], 2)),
                                        position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
-                    landscape = np.concatenate((landscape, mask2), axis=1)
-                write_path = generate_file_name(template, "landscape_gray_", self.FOV, t, "")
+                            # gray_scale = 250 - (int(cells.at[0, "barcode"][c], 2) / max_gray) * 200
+                            gray_scale = 250 - (flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
+                                                len(flat_list_barcode)) * 250
+                            cv.drawContours(image, rev_con, contourIdx=c,
+                                            color=(int(gray_scale), int(gray_scale), int(gray_scale)),
+                                            thickness=-1)
+                    write_path = generate_file_name(template, "barcoded_", self.FOV, t, frame, mode=template_mode)
+                    if not os.path.isdir(save_dir):
+                        os.mkdir(save_dir)
+                    cv.imwrite(save_dir + os.path.sep + write_path, image)
+
+            elif mode == "landscape-gray-scale":
+                landscape = None
+                if for_frames:
+                    idx = range(for_frames[0], for_frames[1])
+                else:
+                    idx = range(len(times) - 1)
+                cells_barcode = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                                  (self.track_df["time_(mins)"] >= times[idx[0]]) &
+                                                  (self.track_df["time_(mins)"] <= times[idx[-1]]), "barcode"].copy()
+                flat_list_barcode = [int(item, 2) for sublist in cells_barcode for item in sublist if item is not None]
+                flat_list_barcode = sorted(list(set(flat_list_barcode)))
+                # max_gray = max(flat_list_barcode)
+
+                def paint_cells_gray(X):
+                    _time = times[X]
+                    _frame = "%04d" % X
+                    _cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                               (self.track_df["time_(mins)"] == _time)].copy()
+                    _cells.reset_index(drop=True, inplace=True)
+                    _path = generate_file_name(template, "", self.FOV, t, _frame, mode=template_mode)
+                    _image = cv.imread(image_dir + os.path.sep + _path, cv.IMREAD_GRAYSCALE)
+                    _contours, _hierarchy = cv.findContours(_image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+                    _rev_con = ()
+                    for k in reversed(_contours):
+                        _rev_con = _rev_con + (k,)
+                    cv.putText(_image, "t={}".format(_time),
+                               (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, 180)
+                    _image = cv.cvtColor(_image, cv.COLOR_GRAY2RGB)
+                    for c in range(len(_cells.at[0, "label"])):
+                        _barcode = _cells.at[0, "barcode"][c]
+                        if _barcode is not None:
+                            # _gray_scale = 250 - (int(_barcode, 2) / max_gray) * 200
+                            _gray_scale = 250 - \
+                                          (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
+                            cv.drawContours(_image, _rev_con, contourIdx=c,
+                                            color=(int(_gray_scale), int(_gray_scale), int(_gray_scale)),
+                                            thickness=-1)
+                            _position = (round(_cells.at[0, "centroid"][c][0]),
+                                         round(_cells.at[0, "centroid"][c][1]))
+                            cv.putText(_image, "{:08b}".format(int(_cells.at[0, "barcode"][c], 2)),
+                                       _position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
+                        elif not show_other:
+                            cv.drawContours(_image, _rev_con, contourIdx=c,
+                                            color=(0, 0, 0), thickness=-1)
+                    if not show_other:
+                        for x in range(3):
+                            cv.drawContours(_image, _rev_con, contourIdx=len(_cells.at[0, "label"]) + x,
+                                            color=(0, 0, 0), thickness=-1)
+                    return _image
+
+                landscape = paint_cells_gray(0)
+                for i in idx:
+                    landscape = np.concatenate((landscape, paint_cells_gray(i+1)), axis=1)
+                landscape = landscape[:int(self.max_y * 1.05), :]
+                if for_frames:
+                    time_in_name = str(for_frames[0]) + "-" + str(for_frames[1])
+                else:
+                    time_in_name = ""
+                write_path = generate_file_name(template, "landscape_gray_", self.FOV, t,
+                                                time_in_name, mode=template_mode)
                 if not os.path.isdir(save_dir):
                     os.mkdir(save_dir)
                 cv.imwrite(save_dir + os.path.sep + write_path, landscape)
                 print(f"saved as {save_dir + os.path.sep + write_path}")
+
             elif mode == "generation-by-poles":
                 for i in range(len(times)):
                     time = times[i]
@@ -217,16 +266,17 @@ class Visualiser:
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
-                    read_path = generate_file_name(template, "", self.FOV, t, frame)
-                    mask = cv.imread(mask_dir + os.path.sep + read_path)
+                    read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
+                    image = cv.imread(image_dir + os.path.sep + read_path)
                     for c in range(len(cells.at[0, "label"])):
                         if cells.at[0, "poles"][c] is not None:
                             position = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
-                            cv.putText(mask, "{}".format(cells.at[0, "poles"][c]),
+                            cv.putText(image, "{}".format(cells.at[0, "poles"][c]),
                                        position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-                    write_path = generate_file_name(template, "poles_", self.FOV, t, frame)
+                    write_path = generate_file_name(template, "poles_", self.FOV, t, frame, mode=template_mode)
                     if not os.path.isdir(save_dir):
                         os.mkdir(save_dir)
-                    cv.imwrite(save_dir + os.path.sep + write_path, mask)
+                    cv.imwrite(save_dir + os.path.sep + write_path, image)
+
             else:
                 return "mode not correct"
