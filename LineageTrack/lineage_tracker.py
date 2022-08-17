@@ -352,7 +352,8 @@ class LineageTrack:
             # score = pr / np.sum(distance)
             # for stronger influence of distance
             try:
-                score = pr ** 0.5 / ((np.sum(distance)) ** 2)
+                # Todo: justification?
+                score = pr ** 0.4 / ((np.sum(distance)) ** 2.5)
             except RuntimeWarning:
                 print("wow distance too small?")
                 print((np.sum(distance)))
