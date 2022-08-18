@@ -11,7 +11,7 @@ from scipy.stats import linregress, poisson
 from scipy.stats import norm
 import itertools
 import copy
-from math import comb
+from math import comb, isnan
 from LineageTrack.cells import Cell
 from tqdm import tqdm
 from joblib import Parallel, delayed
@@ -94,8 +94,8 @@ class LineageTrack:
         for f in files:
             print(f)
         cols = list(pd.read_csv(files[0], nrows=1))
-        columnes_to_skip = list(["image_intensity", "orientation", "centroid_local-0", "centroid_local-1"])
-        df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columnes_to_skip],
+        columns_to_skip = list(["image_intensity", "orientation", "centroid_local-0", "centroid_local-1"])
+        df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columns_to_skip],
                                dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
                                       "centroid-0": np.float32, "centroid-1": np.float32,
                                       "orientation": np.float32, "intensity_mean": np.float32})
@@ -161,6 +161,10 @@ class LineageTrack:
         find and label the division by searching for peaks in the length-time plot, may need user to slice out the bad
         results
         @param trench: the trench id
+        @param threshold: for the scipy package find_peaks - the vertical distance to its neighboring samples.
+        @param distance: for the scipy package find_peaks - required minimal horizontal distance (>= 1)
+        in samples between neighbouring peaks.
+        @param plot: plot the peaks and the mother cells growth if set to True
         @return: first entry is a tuple of the trench id and the length-time array of the mother cell, the second entry
         is a 1D array for index of the peaks
         """
@@ -212,7 +216,8 @@ class LineageTrack:
                     print(f"the slope is estimated to be {slope}")
                     print(f"the intercept is estimated to be {inter}")
                     plt.show()
-                growth_taus.append(slope)
+                if not isnan(slope):
+                    growth_taus.append(slope)
 
             self.div_intervals += division_intervals
             self.growth_taus += growth_taus
@@ -288,7 +293,7 @@ class LineageTrack:
                 cells_state = ["Growing" if x == 0 else "Divided!" for x in com]
                 # cells_states.append(["Growing" if x == 0 else "Divided!" for x in com])
                 yield cells_future, cells_state
-        # this cells_futures is a list of tuples (probability, cells) and cells is a list of object Cell
+        # these cells_futures is a list of tuples (probability, cells) and cells is a list of object Cell
         # return cells_futures, cells_states
 
     def load_current_frame(self, threshold, channels):
@@ -453,6 +458,8 @@ class LineageTrack:
         # Todo: set cells object attribute as well
         idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i + 1 for i in idx_list if i + 1 not in self.next_track]
+        for lysis in self.current_lysis:
+            self.all_cells[self.current_trench][-1][lysis-1].lyse = True
 
     def track_trench(self, trench, threshold=-1, max_dpf=1, mode="SeqMatch", p_sp=0,
                      special_reporter=None, show_details=False, ret_df=False):

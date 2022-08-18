@@ -23,9 +23,9 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited
     """
     # read label image
     label_img = imread(label_img_path)
-    #label_img = label_img.astype(bool)
-    #label_img = remove_small_objects(label_img, min_size=min_size)
-    #labels = label(label_img, connectivity=1)
+    # label_img = label_img.astype(bool)
+    # label_img = remove_small_objects(label_img, min_size=min_size)
+    # labels = label(label_img, connectivity=1)
     labels = label_img
 
     # read intensity image
@@ -34,6 +34,7 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited
     data = regionprops_table(labels, intensity_img, properties=(
         "area", "major_axis_length", "minor_axis_length", "centroid",
         "intensity_mean", "label", "centroid_local", "image_intensity", "orientation"))
+    # make sure it is in the correct order
     order = sorted(range(len(data["centroid-0"])), key=lambda k: data["centroid-0"][k])
     for keys in data:
         data[keys] = [data[keys][i] for i in order]
@@ -60,11 +61,10 @@ def combine_data(data_list):
     return df
 
 
-def generate_csv(label_dir, intensity_dir, save_dir="./temp/", min_size=80):
+def generate_csv(label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=80):
     label_images = sorted([f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))])
     intensity_images = sorted([f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))])
     data_list = []
-    dt = 1
     for i in range(len(label_images)):
         data = get_cell_props(os.path.join(label_dir, label_images[i]),
                               os.path.join(intensity_dir, intensity_images[i]), min_size=min_size)

@@ -22,6 +22,7 @@ class Cell:
         #     self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
         self.coord = []
         self.divide = False
+        self.lyse = False
         self.parent_label = None
         self.parent = None
         self.daughters = None
@@ -32,6 +33,14 @@ class Cell:
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
 
     def set_coordinates(self, division=0, growth=1, offset=0, reset_original=False):
+        """
+        update the cell's major axis length and y position
+        @param division: 0 is no division; 1 means there is division
+        @param growth: growth rate, no growth if equals to one
+        @param offset: offsets caused by other cells growing
+        @param reset_original: return the cell's original length and position if set to True
+        @return: a 2D array of one or two [length, y position]
+        """
         if reset_original:
             self.coord = np.array([[self.major, self.centroid_y]])
             return self.coord

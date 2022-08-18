@@ -10,20 +10,33 @@ import matplotlib.image as mpimg
 template_mask = ['xy', '_mCherry_TR', '_T', '-_epoch-20_prob-99.png']
 
 
-def generate_file_name(template, pre=None, FOV=None, trench=None, time=None, mode="exp"):
+def generate_file_name(template, pre=None, fov=None, trench=None, time=None, mode="exp"):
+    """
+    This function should be modified depending on how your images are named
+    @param template:
+    @param pre: prefix
+    @param fov: field of view
+    @param trench: trench_id
+    @param time: frame number
+    @param mode: can have more mode for different way of naming the files, "SyMBac" is for the synthetic data
+    @return: the path to the file of given fov and trench at given time
+    """
     # e.g., xy000_mCherry_TR1_T0000-_epoch-20_prob-99.png
     if mode == "exp":
-        path = str(pre) + template[0] + str(FOV) + template[1] + str(int(trench)) + template[2] + str(time) + template[3]
+        path = str(pre) + template[0] + str(fov) + template[1] + \
+               str(int(trench)) + template[2] + str(time) + template[3]
 
     # for SyMBac data - testing purpose #
-    if mode == "SyMBac":
+    elif mode == "SyMBac":
         path = template[0] + str(time) + ".tif"
+    else:
+        path = ""
     return path
 
 
 class Visualiser:
-    def __init__(self, FOV, track_df, lysis_df, cells=None):
-        self.FOV = FOV
+    def __init__(self, fov, track_df, lysis_df, cells=None):
+        self.FOV = fov
         track_df.sort_values(["trench_id", "time_(mins)"], inplace=True)
         lysis_df.sort_values(["trench_id", "time_(mins)"], inplace=True)
         self.track_df = track_df
@@ -34,7 +47,7 @@ class Visualiser:
         self.max_y = max(flat_list_y)
 
     @classmethod
-    def from_path(cls, FOV, filepath_t, filepath_l):
+    def from_path(cls, fov, filepath_t, filepath_l):
         if not os.path.exists(filepath_t):
             raise Exception(f"specified file {filepath_t} not found")
         df_t = pd.read_csv(filepath_t, converters={
@@ -47,9 +60,21 @@ class Visualiser:
         if not os.path.exists(filepath_l):
             raise Exception(f"specified file {filepath_l} not found")
         df_l = pd.read_csv(filepath_l, converters={"label": ast.literal_eval})
-        return cls(FOV, df_t, df_l)
+        return cls(fov, df_t, df_l)
 
-    def get_labelled_image(self, read_dir, frames, trench, pre="barcoded_", template=template_mask, template_mode="exp"):
+    def get_labelled_image(self, read_dir, frames, trench, pre="barcoded_", template=None, template_mode="exp"):
+        """
+        display the labelled images of selected frames and trench
+        @param read_dir: the directory of these labelled images
+        @param frames: a list of frame index (NOT the time in minutes)
+        @param trench: the trench_id
+        @param pre: can be "barcoded_", "poles_", or "connected_"
+        @param template: will be passed on to generate_file_name
+        @param template_mode: will be passed on to generate_file_name
+        @return:
+        """
+        if template is None:
+            template = template_mask
         fig, ax = plt.subplots(1, len(frames), figsize=(100, 100))
         ax_flat = ax.flatten()
         for i in range(len(frames)):
@@ -60,16 +85,18 @@ class Visualiser:
             ax_flat[i].set_ylim(300)
 
     def label_images(self, image_dir, mode="connect_daughter", save_dir="./temp/labelled_masks/",
-                     template=template_mask, template_mode="exp", show_other=True, for_frames=None):
+                     template=None, template_mode="exp", show_other=True, for_frames=None):
         """
-
-        @param for_frames:
-        @param show_other:
-        @param template_mode:
-        @param save_dir:
-        @param image_dir:
+        # Todo: can have different template for read and write file names
+        Generate images that is labelled by specific mode
+        @param image_dir: directory of the images to label
         @param mode: connect_daughter; landscape-line; barcode; landscape-gray-scale; generation-by-poles
-        @param template:
+        @param save_dir: directory to save the labelled images
+        @param template: will be passed on to generate_file_name
+        @param template_mode: will be passed on to generate_file_name
+        @param show_other: whether to show the un-tracked cells or not
+        @param for_frames: in some landscape mode, can set this to a 2 element tuple
+        to specify the range of frames to label
         @return:
         """
         if template is None:
@@ -89,7 +116,6 @@ class Visualiser:
                     cells.reset_index(drop=True, inplace=True)
                     read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
                     image = cv.imread(image_dir + os.path.sep + read_path)
-                    # print(image.shape)
                     for c in range(len(cells.at[0, "label"])):
                         position_1 = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
                         cv.drawMarker(image, position_1, (255, 0, 0))
@@ -109,7 +135,7 @@ class Visualiser:
                                 middle_position = (middle_position[0], middle_position[1] + 7)
                                 cv.putText(image, f"cell no{int(cells.at[0, 'parent_label'][c])}",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-                    write_path = generate_file_name(template, "labelled_", self.FOV, t, frame, mode=template_mode)
+                    write_path = generate_file_name(template, "connected_", self.FOV, t, frame, mode=template_mode)
                     if not os.path.isdir(save_dir):
                         os.mkdir(save_dir)
                     cv.imwrite(save_dir + os.path.sep + write_path, image)
@@ -118,7 +144,11 @@ class Visualiser:
                 offset = 0
                 landscape = None
                 image_buffer = None
-                for i in range(len(times) - 1):
+                if for_frames:
+                    idx = range(for_frames[0], for_frames[1])
+                else:
+                    idx = range(len(times) - 1)
+                for i in idx:
                     time1 = times[i]
                     time2 = times[i + 1]
                     frame1 = "%04d" % i
@@ -195,7 +225,6 @@ class Visualiser:
                     cv.imwrite(save_dir + os.path.sep + write_path, image)
 
             elif mode == "landscape-gray-scale":
-                landscape = None
                 if for_frames:
                     idx = range(for_frames[0], for_frames[1])
                 else:
@@ -217,26 +246,26 @@ class Visualiser:
                     _image = cv.imread(image_dir + os.path.sep + _path, cv.IMREAD_GRAYSCALE)
                     _contours, _hierarchy = cv.findContours(_image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
                     _rev_con = ()
-                    for k in reversed(_contours):
-                        _rev_con = _rev_con + (k,)
+                    for K in reversed(_contours):
+                        _rev_con = _rev_con + (K,)
                     cv.putText(_image, "t={}".format(_time),
                                (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, 180)
                     _image = cv.cvtColor(_image, cv.COLOR_GRAY2RGB)
-                    for c in range(len(_cells.at[0, "label"])):
-                        _barcode = _cells.at[0, "barcode"][c]
+                    for C in range(len(_cells.at[0, "label"])):
+                        _barcode = _cells.at[0, "barcode"][C]
                         if _barcode is not None:
                             # _gray_scale = 250 - (int(_barcode, 2) / max_gray) * 200
                             _gray_scale = 250 - \
                                           (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
-                            cv.drawContours(_image, _rev_con, contourIdx=c,
+                            cv.drawContours(_image, _rev_con, contourIdx=C,
                                             color=(int(_gray_scale), int(_gray_scale), int(_gray_scale)),
                                             thickness=-1)
-                            _position = (round(_cells.at[0, "centroid"][c][0]),
-                                         round(_cells.at[0, "centroid"][c][1]))
-                            cv.putText(_image, "{:08b}".format(int(_cells.at[0, "barcode"][c], 2)),
+                            _position = (round(_cells.at[0, "centroid"][C][0]),
+                                         round(_cells.at[0, "centroid"][C][1]))
+                            cv.putText(_image, "{:08b}".format(int(_cells.at[0, "barcode"][C], 2)),
                                        _position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
                         elif not show_other:
-                            cv.drawContours(_image, _rev_con, contourIdx=c,
+                            cv.drawContours(_image, _rev_con, contourIdx=C,
                                             color=(0, 0, 0), thickness=-1)
                     if not show_other:
                         for x in range(3):
