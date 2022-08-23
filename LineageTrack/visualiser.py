@@ -3,6 +3,7 @@ import cv2 as cv
 import pandas as pd
 import numpy as np
 import ast
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
@@ -85,18 +86,21 @@ class Visualiser:
             ax_flat[i].set_ylim(300)
 
     def label_images(self, image_dir, mode="connect_daughter", save_dir="./temp/labelled_masks/",
-                     template=None, template_mode="exp", show_other=True, for_frames=None):
+                     template=None, template_mode="exp", show_other=True, for_frames=None, colour_scale="Greys"):
         """
         # Todo: can have different template for read and write file names
         Generate images that is labelled by specific mode
         @param image_dir: directory of the images to label
-        @param mode: connect_daughter; landscape-line; barcode; landscape-gray-scale; generation-by-poles
+        @param mode: connect_daughter; landscape-line; barcode; landscape-colour-scale; generation-by-poles
         @param save_dir: directory to save the labelled images
         @param template: will be passed on to generate_file_name
         @param template_mode: will be passed on to generate_file_name
         @param show_other: whether to show the un-tracked cells or not
         @param for_frames: in some landscape mode, can set this to a 2 element tuple
         to specify the range of frames to label
+        @param colour_scale: 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
+        'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
+        'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn'
         @return:
         """
         if template is None:
@@ -207,6 +211,7 @@ class Visualiser:
                                          for sublist in self.track_df.loc[:, "barcode"]
                                          for item in sublist if item is not None]
                     flat_list_barcode = sorted(list(set(flat_list_barcode)))
+                    cmap = matplotlib.cm.get_cmap(colour_scale)
                     # max_gray = max(flat_list_barcode)
                     for c in range(len(cells.at[0, "label"])):
                         if cells.at[0, "barcode"][c] is not None:
@@ -214,17 +219,20 @@ class Visualiser:
                             cv.putText(image, "{:08b}".format(int(cells.at[0, "barcode"][c], 2)),
                                        position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
                             # gray_scale = 250 - (int(cells.at[0, "barcode"][c], 2) / max_gray) * 200
-                            gray_scale = 250 - (flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
-                                                len(flat_list_barcode)) * 250
+                            # gray_scale = 250 - (flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
+                            #                     len(flat_list_barcode)) * 250
+                            color_scale = cmap((flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
+                                                len(flat_list_barcode)))
+                            color_scale = tuple(reversed([int((255 * x)) for x in color_scale[0:3]]))
                             cv.drawContours(image, rev_con, contourIdx=c,
-                                            color=(int(gray_scale), int(gray_scale), int(gray_scale)),
+                                            color=color_scale,
                                             thickness=-1)
                     write_path = generate_file_name(template, "barcoded_", self.FOV, t, frame, mode=template_mode)
                     if not os.path.isdir(save_dir):
                         os.mkdir(save_dir)
                     cv.imwrite(save_dir + os.path.sep + write_path, image)
 
-            elif mode == "landscape-gray-scale":
+            elif mode == "landscape-colour-scale":
                 if for_frames:
                     idx = range(for_frames[0], for_frames[1])
                 else:
@@ -236,7 +244,7 @@ class Visualiser:
                 flat_list_barcode = sorted(list(set(flat_list_barcode)))
                 # max_gray = max(flat_list_barcode)
 
-                def paint_cells_gray(X):
+                def paint_cells(X):
                     _time = times[X]
                     _frame = "%04d" % X
                     _cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
@@ -251,14 +259,17 @@ class Visualiser:
                     cv.putText(_image, "t={}".format(_time),
                                (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, 180)
                     _image = cv.cvtColor(_image, cv.COLOR_GRAY2RGB)
+                    cmap = matplotlib.cm.get_cmap(colour_scale)
                     for C in range(len(_cells.at[0, "label"])):
                         _barcode = _cells.at[0, "barcode"][C]
                         if _barcode is not None:
                             # _gray_scale = 250 - (int(_barcode, 2) / max_gray) * 200
-                            _gray_scale = 250 - \
-                                          (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
+                            # _gray_scale = 250 - \
+                            #               (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
+                            _color_scale = cmap(flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode))
+                            _color_scale = tuple(int((255 * x)) for x in _color_scale[0:3])
                             cv.drawContours(_image, _rev_con, contourIdx=C,
-                                            color=(int(_gray_scale), int(_gray_scale), int(_gray_scale)),
+                                            color=_color_scale,
                                             thickness=-1)
                             _position = (round(_cells.at[0, "centroid"][C][0]),
                                          round(_cells.at[0, "centroid"][C][1]))
@@ -273,15 +284,15 @@ class Visualiser:
                                             color=(0, 0, 0), thickness=-1)
                     return _image
 
-                landscape = paint_cells_gray(0)
+                landscape = paint_cells(0)
                 for i in idx:
-                    landscape = np.concatenate((landscape, paint_cells_gray(i+1)), axis=1)
+                    landscape = np.concatenate((landscape, paint_cells(i+1)), axis=1)
                 landscape = landscape[:int(self.max_y * 1.05), :]
                 if for_frames:
                     time_in_name = str(for_frames[0]) + "-" + str(for_frames[1])
                 else:
                     time_in_name = ""
-                write_path = generate_file_name(template, "landscape_gray_", self.FOV, t,
+                write_path = generate_file_name(template, "landscape_barcode_", self.FOV, t,
                                                 time_in_name, mode=template_mode)
                 if not os.path.isdir(save_dir):
                     os.mkdir(save_dir)
