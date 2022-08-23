@@ -275,16 +275,12 @@ class LineageTrack:
         return poisson.pmf(n, self.dt / self.growth_tau)
 
     def pr_div_length(self, n, length):
-        pr_d = norm.cdf(length, loc=self.sizer_length_paras[0], scale=np.sqrt(self.sizer_length_paras[1])) * n
-        pr_no_d = (1 - norm.cdf(length, loc=self.sizer_length_paras[0], scale=np.sqrt(self.sizer_length_paras[1]))) * (
-                    1 - n)
-        return pr_d + pr_no_d
+        cdf = norm.cdf(length, loc=self.sizer_length_paras[0], scale=np.sqrt(self.sizer_length_paras[1]))
+        return cdf * n + (1 - cdf) * (1 - n)
 
     def pr_div_adder(self, n, dl):
-        pr_d = norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1])) * n
-        pr_no_d = (1 - norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1]))) * (
-                1 - n)
-        return pr_d + pr_no_d
+        cdf = norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1]))
+        return cdf * n + (1 - cdf) * (1 - n)
 
     def cells_simulator(self, cells_list, p_sp):
         growth = self.calculate_growth()
