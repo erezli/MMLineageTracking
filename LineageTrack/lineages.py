@@ -13,6 +13,7 @@ class Lineage:
         self.lengths = [cell.major for cell in cells]
         self.widths = [cell.minor for cell in cells]
         self.positions = [(cell.centroid_x, cell.centroid_y) for cell in cells]
+        self.areas = [cell.area for cell in cells]
         self.barcode = cells[0].barcode
         self.pole_label = cells[0].poles
 
@@ -69,23 +70,38 @@ class Lineage:
         return lineages
 
     def get_adder_dl(self):
-        if self.daughters[0] is not None:
+        if self.daughters[0] is not None and self.parent is not None:
             return self.lengths[-1] - self.lengths[0]
         else:
             return None
 
     def get_timer_dt(self):
-        if self.daughters[0] is not None:
+        if self.daughters[0] is not None and self.parent is not None:
             return self.daughters[0].resident_time[0] - self.resident_time[0]
         else:
             return None
 
     def get_growth_time_constant(self):
-        if self.daughters[0] is not None:
-            slope, inter, r, p, se = linregress(self.resident_time - self.resident_time[0], np.log2(self.lengths))
+        if self.daughters[0] is not None and self.parent is not None:
+            slope, inter, r, p, se = linregress([t - self.resident_time[0] for t in self.resident_time],
+                                                np.log2(self.lengths))
             if not isnan(slope):
-                return slope
+                return 1 / slope
             else:
+                print(self.resident_time)
+                print(self.labels)
                 return None
         else:
             return None
+
+    def instant_growth_rate_position(self):
+        for i in range(len(self.resident_time) - 1):
+            dlogL = np.log2(self.lengths[i + 1]) - np.log2(self.lengths[i])
+            dt = self.resident_time[i + 1] - self.resident_time[i]
+            yield dlogL / dt, self.positions[i][1]
+
+    def partial_dlogA_dt(self):
+        for i in range(len(self.resident_time) - 1):
+            dlogA = np.log2(self.areas[i + 1]) - np.log2(self.areas[i])
+            dt = self.resident_time[i + 1] - self.resident_time[i]
+            yield dlogA / dt, (self.resident_time[i], self.labels[i])

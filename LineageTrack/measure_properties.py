@@ -61,7 +61,7 @@ def combine_data(data_list):
     return df
 
 
-def generate_csv(label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=80):
+def generate_csv(label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=50):
     label_images = sorted([f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))])
     intensity_images = sorted([f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))])
     data_list = []
