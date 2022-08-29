@@ -47,9 +47,9 @@ class Cell:
         if division == 0:
             # self.coord = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
             #              self.local_centroid_y, self.orientation]
-            self.coord = np.array([[self.major * growth * 0.9,
+            self.coord = np.array([[self.major * growth,
                                     self.centroid_y + offset + self.major * (growth - 1) / 2,
-                                    self.area * growth * 0.9]])
+                                    np.sqrt(self.area) * growth]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             self.divide = False
@@ -59,12 +59,12 @@ class Cell:
             #               self.centroid_y + self.local_centroid_y, self.local_centroid_x,
             #               self.local_centroid_y * 2, self.orientation]
             self.coord = np.array(
-                [[self.major * growth / 2 * 0.9,  # 0.95 is segmentation erosion
+                [[self.major * growth / 2 * 0.9,  # 0.9 is segmentation erosion
                   self.centroid_y + offset + self.major * (growth - 2) / 4,
-                  self.area * growth / 2 * 0.9],
-                 [self.major * growth / 2 * 0.9,  # 0.95 is segmentation erosion
+                  np.sqrt(self.area) * growth / 2 * 0.9],
+                 [self.major * growth / 2 * 0.9,  # 0.9 is segmentation erosion
                   self.centroid_y + offset + self.major * (3 * growth - 2) / 4,
-                  self.area * growth / 2 * 0.9]])
+                  np.sqrt(self.area) * growth / 2 * 0.9]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             self.divide = True

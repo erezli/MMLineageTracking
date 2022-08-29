@@ -71,7 +71,10 @@ class Lineage:
 
     def get_adder_dl(self):
         if self.daughters[0] is not None and self.parent is not None:
-            return self.lengths[-1] - self.lengths[0]
+            if self.lengths[-1] > self.lengths[0]:  # Todo: better condition for outliers?
+                return self.lengths[-1] - self.lengths[0]
+            else:
+                return None
         else:
             return None
 

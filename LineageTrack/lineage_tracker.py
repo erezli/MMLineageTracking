@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 from glob import glob
 # from sklearn.preprocessing import normalize, MinMaxScaler
 from scipy.spatial import KDTree, distance_matrix
+from scipy.special import owens_t
 from scipy.signal import find_peaks
 from scipy.stats import linregress, poisson
-from scipy.stats import norm
+from scipy.stats import norm, skewnorm, multivariate_normal
 from math import comb, isnan, cos
 from tqdm import tqdm
 from joblib import Parallel, delayed
@@ -58,6 +59,7 @@ class LineageTrack:
         self.dpf = 2
         self.fill_gap = False
         self.drifting = False
+        self.skew_model = True
 
         # model parameters #
         self.div_intervals = []
@@ -65,9 +67,12 @@ class LineageTrack:
         self.growth_taus = []
         self.growth_tau = (24, 0)
         self.length_at_div = []
-        self.sizer_length_paras = (50, 20)
+        self.sizer_length_paras = (None, None)
+        self.sizer_skew = 0
+        self.adder_length_paras = (None, None)
+        self.adder_skew = 0
         self.mother_cell_collected = []
-        self.erode_factor = 1.15
+        self.erode_factor = 1.1  # for fill gaps mode in offset calculation
 
         # results #
         self.current_track = []
@@ -235,15 +240,47 @@ class LineageTrack:
             max_lengths = []
             for i in self.length_at_div:
                 max_lengths.extend(i[1])
-            mean = np.mean(max_lengths)
-            var = np.var(max_lengths)
-            self.sizer_length_paras = (mean, var)
+            self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
+            self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
-                    The average division length is {self.sizer_length_paras[0]} with variance {self.sizer_length_paras[1]}
+                    The average division length is {self.sizer_length_paras[0]} 
+                    with variance {self.sizer_length_paras[1]} and skewness {self.sizer_skew}
                     """)
-        elif model == "lineage":
+        elif model == "lineage-trench":
+            max_lengths = []
+            adder_lengths = []
+            timer_periods = []
+            growth_time_consts = []
+
+            lineages = self.generate_lineage(self.current_trench)
+            max_lengths += [line.lengths[-1] for line in lineages if line.daughters[0] is not None]
+            adder_lengths += [line.get_adder_dl() for line in lineages if line.get_adder_dl() is not None]
+            timer_periods += [line.get_timer_dt() for line in lineages if line.get_timer_dt() is not None]
+            q75, q25 = np.percentile(self.growth_taus, [75, 25])
+            intr_qr = q75 - q25
+            max_thr = q75 + (1.5 * intr_qr)
+            min_thr = q25 - (1.5 * intr_qr)
+            growth_time_consts += [line.get_growth_time_constant() for line in lineages
+                                   if line.get_growth_time_constant() is not None and
+                                   max_thr > line.get_growth_time_constant() > min_thr]
+            self.div_interval = np.mean(timer_periods)
+            self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
+            # self.growth_tau = (self.growth_tau + self.div_interval) / 2
+            self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
+            self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
+            self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
+            self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(np.var(adder_lengths))
+            print(f"""
+                    The average time interval for division is {self.div_interval}
+                    The time constant for exponential growth is {self.growth_tau}
+                    The average division length is {self.sizer_length_paras[0]} 
+                    with variance {self.sizer_length_paras[1]} and skewness {self.sizer_skew}
+                    The length for adder model is {self.adder_length_paras[0]} 
+                    with variance {self.adder_length_paras[1]} and skewness {self.adder_skew}
+                    """)
+        elif model == "lineage-all":
             max_lengths = []
             adder_lengths = []
             timer_periods = []
@@ -259,12 +296,16 @@ class LineageTrack:
             self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
             # self.growth_tau = (self.growth_tau + self.div_interval) / 2
             self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
+            self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
             self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
+            self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(np.var(adder_lengths))
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
-                    The average division length is {self.sizer_length_paras[0]} with variance {self.sizer_length_paras[1]}
-                    The length for adder model is {self.adder_length_paras[0]} with variance {self.adder_length_paras[1]}
+                    The average division length is {self.sizer_length_paras[0]} 
+                    with variance {self.sizer_length_paras[1]} and skewness {self.sizer_skew}
+                    The length for adder model is {self.adder_length_paras[0]} 
+                    with variance {self.adder_length_paras[1]} and skewness {self.adder_skew}
                     """)
 
     def calculate_growth(self):
@@ -277,19 +318,37 @@ class LineageTrack:
         return poisson.pmf(n, self.dt / self.growth_tau[0])
 
     def pr_div_length(self, n, length):
-        cdf = norm.cdf(length, loc=self.sizer_length_paras[0], scale=np.sqrt(self.sizer_length_paras[1]))
+        if self.skew_model:
+            # cdf = skewnorm.cdf(length, np.array([self.sizer_skew] * len(n)), loc=self.sizer_length_paras[0],
+            #                    scale=np.sqrt(self.sizer_length_paras[1]))
+            # scipy skewnorm.cdf is extremely slow because they used integrate, this is fixed in 1.10.0 milestone
+            # however the 1.10.0 version is not released yet
+            # refer to Amsler, C., Papadopoulos, A. & Schmidt, P. Evaluating the cdf of the Skew Normal distribution.
+            cdf = sn_cdf(length, self.sizer_skew, self.sizer_length_paras[0], self.sizer_length_paras[1])
+        else:
+            cdf = norm.cdf(length, loc=self.sizer_length_paras[0], scale=np.sqrt(self.sizer_length_paras[1]))
         return np.prod(cdf * n + (1 - cdf) * (1 - n))
 
     def pr_div_adder(self, n, dl):
-        cdf = norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1]))
+        if self.skew_model:
+            # cdf = skewnorm.cdf(dl, np.array([self.adder_skew] * len(n)), loc=self.adder_length_paras[0],
+            #                    scale=np.sqrt(self.adder_length_paras[1]))
+            cdf = sn_cdf(dl, self.adder_skew, self.adder_length_paras[0], self.adder_length_paras[1])
+        else:
+            cdf = norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1]))
         return np.prod(cdf * n + (1 - cdf) * (1 - n))
 
     def cells_simulator(self, cells_list, p_sp):
         growth = self.calculate_growth()
-        # cells_futures = []
-        # cells_states = []
-        # prob_0 = self.pr_div_lambda(0) ** 0.5   # Todo: arbitrary weighting
-        # prob_1 = self.pr_div_lambda(1) ** 0.5
+        # prob = self.pr_div_length(np.array([0] * len(cells_list)), [c.major for c in cells_list])
+        # dl = []
+        # for i in range(self.current_number_of_cells):
+        #     lineage_parent = cells_list[i]
+        #     while lineage_parent.parent is not None and lineage_parent.parent.divide is False:
+        #         lineage_parent = lineage_parent.parent
+        #     dl.append(cells_list[i].major - lineage_parent.major)
+        # if self.probability_mode == "sizer-adder" and self.current_frame > self.div_interval / 2:
+        #     prob *= self.pr_div_adder(np.array([0] * len(cells_list)), dl)
 
         cells_future = [p_sp, cells_list]
         # cells_futures.append(cells_future)
@@ -311,7 +370,8 @@ class LineageTrack:
                     while lineage_parent.parent is not None and lineage_parent.parent.divide is False:
                         lineage_parent = lineage_parent.parent
                     dl.append(cells_list[i].major - lineage_parent.major)
-                    offset += cells_list[i].major * (growth - 1) * cos(cells_list[i].orientation) # * self.curvature_factor
+                    offset += cells_list[i].major * (growth - 1) * cos(
+                        cells_list[i].orientation) # / self.erode_factor
                     # prob *= prob_0 * self.pr_div_length(0, cells_list[i].coord[0][0])
                     # prob *= prob_1 * self.pr_div_length(1, cells_list[i].coord[0][0] * 2)
                     lengths.append(cells_list[i].major * growth)
@@ -403,6 +463,11 @@ class LineageTrack:
                         break
                     elif col == index_mtx.shape[1] - 1:
                         # for the case next frame has more cells than the simulated scenario
+                        # if self.current_frame == 84:
+                        #     print(row)
+                        #     print(col)
+                        #     print(index_mtx)
+                        #     print(idx)
                         idx.append(None)
                         distance.append(d_mtx[row][col])
             if idx != [x for x in range(len(idx))]:
@@ -450,17 +515,15 @@ class LineageTrack:
             for cell in predicted_future[1]:
                 for c in cell.coord:
                     cells_arrangement.append(cell)
-                    points.append([c[0], (c[1] - drift), c[2]]) # Todo: make y coord less significant
+                    points.append([c[0], (c[1] - drift), c[2]])  # Todo: make y coord less significant
             points = np.array(points)
             distance, idx = self.nearest_neighbour(points, true_coord)
             # score = pr / np.sum(distance)
             # for stronger influence of distance
             try:
                 # Todo: justification?
-                if self.probability_mode == "sizer":
-                    score = pr ** 0.3 / ((np.sum(distance)) ** 3)
-                elif self.probability_mode == "sizer-adder":
-                    score = pr ** 0.5 / ((np.sum(distance)) ** 3)
+                # score = (0.3 + pr ** 0.5) / ((np.sum(distance)) ** 3)
+                score = scoring(pr, distance)
             except RuntimeWarning:
                 print("wow distance too small?")
                 print((np.sum(distance)))
@@ -489,6 +552,8 @@ class LineageTrack:
                 cells = copy.deepcopy(predicted_future[1])
             if self.show_details:
                 print("the simulated scenario: {}".format(predicted_state))
+                print([l.label for l in cells_arrangement])
+                print(idx)
                 print(points)
                 print("with probability: {}".format(pr))
                 print("score: {}".format(score))
@@ -538,12 +603,13 @@ class LineageTrack:
         for lysis in self.current_lysis:
             self.all_cells[self.current_trench][-1][lysis - 1].lyse = True
 
-    def track_trench(self, trench, threshold=-1, max_dpf=1, search_mode="SeqMatch", probability_mode="sizer", p_sp=0,
-                     special_reporter=None, show_details=False, ret_df=False, fill_gap=False, adap_dpf=False,
-                     drift=False, update_from_res=False):
+    def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer", p_sp=0,
+                     special_reporter=None, show_details=False, ret_df=True, fill_gap=False, adap_dpf=False,
+                     drift=False, skew_model=True, update_from_res=False):
         """
         Track cells in specified trench, results are stored in a pandas DataFrame, with a colume that contains
         the labels of the parent cell from previous frame.
+        @param skew_model:
         @param update_from_res:
         @param drift:
         @param trench: trench_id
@@ -572,6 +638,7 @@ class LineageTrack:
             self.probability_mode = probability_mode
             self.fill_gap = fill_gap
             self.drifting = drift
+            self.skew_model = skew_model
             frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
             frames = sorted(list(set(frames)))
             if threshold == -1:
@@ -657,20 +724,16 @@ class LineageTrack:
                 elif special_reporter is not None:
                     raise Exception("the specified channel has no data found")
                 # for testing #
-                # if i == 32:
+                if i == 19:
+                    self.show_details = True
+                elif i == 21:
+                    self.show_details = False
+                # if i == 51:
                 #     self.show_details = True
-                # elif i == 34:
-                #     self.show_details = False
-                # if i == 32:
-                #     self.show_details = True
-                # elif i == 34:
-                #     self.show_details = False
-                # if i == 0:
-                #     self.show_details = True
-                # elif i == 1:
+                # elif i == 53:
                 #     self.show_details = False
             if update_from_res:
-                self.update_model_para("lineage")
+                self.update_model_para("lineage-trench")
             if ret_df:
                 trench_track = [data_buffer["trench"]] * len(data_buffer["track_frame"])
                 track_df = pd.DataFrame(data={
@@ -693,16 +756,32 @@ class LineageTrack:
         else:
             return f"""Specified trench id {trench} does not exist"""
 
-    def track_trenches(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer",
-                       p_sp=0, special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False,
-                       fill_gap=False, adap_dpf=False, drift=False):
+    def track_trench_iteratively(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=0,
+                                 special_reporter=None, show_details=False, fill_gap=False,
+                                 adap_dpf=True, drift=False, skew_model=True):
+        if threshold == -1:
+            threshold = self.max_y
+        no_steps = round(threshold / 200)  # Todo: add argument to change 200
+        self.update_model_para("unif")
+        probability_mode = "sizer"
+        for i in range(no_steps - 1):
+            thr = int(threshold * (i + 1) / no_steps)
+            self.track_trench(trench, thr, max_dpf, search_mode, probability_mode, p_sp, special_reporter, show_details,
+                              False, fill_gap, adap_dpf, drift, skew_model, update_from_res=True)
+            probability_mode = "sizer-adder"
+        return (self.track_trench(trench, threshold, max_dpf, search_mode, probability_mode, p_sp, special_reporter,
+                                  show_details, False, fill_gap, adap_dpf, drift, skew_model, update_from_res=False),
+                self.all_cells)
+
+    def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=0,
+                                   special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False,
+                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True):
         if trenches is None:
             trenches = self.trenches
-        results = Parallel(n_jobs=4, verbose=5)(delayed(self.track_trench)
-                                                (t, threshold, max_dpf, search_mode, probability_mode, p_sp,
-                                                 special_reporter, show_details, False, fill_gap, adap_dpf,
-                                                 drift, True)
-                                                for t in trenches)
+        results = Parallel(n_jobs=-1, verbose=5)(delayed(self.track_trench_iteratively)
+                                                 (t, threshold, max_dpf, search_mode, p_sp, special_reporter,
+                                                  show_details, fill_gap, adap_dpf, drift, skew_model)
+                                                 for t in trenches)
         data_buffer = {
             "trench_track": [],
             "trench_lyse": [],
@@ -716,16 +795,18 @@ class LineageTrack:
             "poles": []
         }
         for r in results:
-            data_buffer["trench_track"].extend([r["trench"]] * len(r["track_frame"]))
-            data_buffer["trench_lyse"].extend([r["trench"]] * len(r["lysis_frame"]))
-            data_buffer["track"].extend(r["track"])
-            data_buffer["lysis"].extend(r["lysis"])
-            data_buffer["label"].extend(r["label"])
-            data_buffer["lysis_frame"].extend(r["lysis_frame"])
-            data_buffer["track_frame"].extend(r["track_frame"])
-            data_buffer["coord"].extend(r["coord"])
-            data_buffer["barcode"].extend(r["barcode"])
-            data_buffer["poles"].extend(r["poles"])
+            data_buffer["trench_track"].extend([r[0]["trench"]] * len(r[0]["track_frame"]))
+            data_buffer["trench_lyse"].extend([r[0]["trench"]] * len(r[0]["lysis_frame"]))
+            data_buffer["track"].extend(r[0]["track"])
+            data_buffer["lysis"].extend(r[0]["lysis"])
+            data_buffer["label"].extend(r[0]["label"])
+            data_buffer["lysis_frame"].extend(r[0]["lysis_frame"])
+            data_buffer["track_frame"].extend(r[0]["track_frame"])
+            data_buffer["coord"].extend(r[0]["coord"])
+            data_buffer["barcode"].extend(r[0]["barcode"])
+            data_buffer["poles"].extend(r[0]["poles"])
+            k = list(r[1].keys())[0]
+            self.all_cells[k] = r[1][k]
         track_df = pd.DataFrame(data={
             "trench_id": data_buffer["trench_track"],
             "time_(mins)": data_buffer["track_frame"],
@@ -757,6 +838,7 @@ class LineageTrack:
         lysis_df.to_csv(file_lyse)
         # Todo: save the list of Cell objects to files using `pickle`
         # pickle.dump(self.all_cells, os.path.join(save_dir, file_cell))
+        print(self.all_cells.keys())
         return f"""output saved at {file_track} and {file_lyse}."""
 
     def measure_div_dist(self, trenches, plot=False):
@@ -836,3 +918,27 @@ def binary_permutations(lst):
         for i in com:
             result[i] = 1
         yield result
+
+
+# Azzalini and Capitanio (2014)
+def sn_cdf(val, a, mean, var):
+    # Todo: add upper / lower tail handling
+    val = (val - mean) / np.sqrt(var)
+
+    if a >= 0:
+        # x = np.array([[v, 0] for v in val])
+        # cov = a / np.sqrt(1 + a ** 2)
+        # return 2 * multivariate_normal.cdf(x, cov=[[cov, 0], [0, cov]])
+        return norm.cdf(val) - 2 * owens_t(val, np.array([a] * len(val)))
+    else:
+        # x = np.array([[-v, 0] for v in val])
+        # cov = - a / np.sqrt(1 + a ** 2)
+        # return 1 - 2 * multivariate_normal.cdf(x, cov=[[cov, 0], [0, cov]])
+        return 1 - norm.cdf(-val) - 2 * owens_t(-val, np.array([a] * len(val)))
+
+
+def scoring(p, d):
+    if p > 0:
+        return (0.3 + 1 / (1 - np.log10(p))) / ((np.sum(d)) ** 3)
+    else:
+        return 0
