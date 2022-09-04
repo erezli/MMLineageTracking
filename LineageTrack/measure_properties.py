@@ -5,6 +5,7 @@ from skimage.measure import regionprops_table, label
 from skimage.io import imshow, imread
 from skimage.morphology import remove_small_objects
 import pandas as pd
+from tqdm import tqdm
 
 
 def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited from Charlie's function
@@ -23,10 +24,10 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited
     """
     # read label image
     label_img = imread(label_img_path)
-    # label_img = label_img.astype(bool)
-    # label_img = remove_small_objects(label_img, min_size=min_size)
-    # labels = label(label_img, connectivity=1)
-    labels = label_img
+    label_img = label_img.astype(bool)
+    label_img = remove_small_objects(label_img, min_size=min_size)
+    labels = label(label_img, connectivity=1)
+    # labels = label_img
 
     # read intensity image
     intensity_img = tifffile.imread(intensity_img_path)
@@ -61,17 +62,32 @@ def combine_data(data_list):
     return df
 
 
-def generate_csv(label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=50):
+def generate_csv(fov, label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=50, channels=None):
     label_images = sorted([f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))])
-    intensity_images = sorted([f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))])
-    data_list = []
-    for i in range(len(label_images)):
-        data = get_cell_props(os.path.join(label_dir, label_images[i]),
-                              os.path.join(intensity_dir, intensity_images[i]), min_size=min_size)
-        data = add_information(data, channel="PC", trench_id=1, time=i*dt, identity=intensity_images[i])
-        data_list.append(data)
-    df = combine_data(data_list)
-    if not os.path.isdir(save_dir):
-        os.mkdir(save_dir)
-    df.to_csv(os.path.join(save_dir, "symbac_test.csv"))
-    return f"saved to {os.path.join(save_dir, 'symbac_test.csv')}"
+    # if channels is None:
+    #     channels = set()
+    #     intensity_images = sorted(
+    #         [f for f in os.listdir(intensity_dir) if os.path.isfile(os.path.join(intensity_dir, f))])
+    #     for img in intensity_images:
+    #         channels.add(img.split("_")[1])
+    #     print(channels)
+    save_loc = []
+    for channel in channels:
+        data_list = []
+        for i in tqdm(range(len(label_images)), desc=f"reading through images in channel {channel} and FOV {fov}"):
+            info = label_images[i].split("_")
+            if int(info[4].split("-")[1]) == 20 and int(info[5].split("-")[1].split(".")[0]) == 99 and info[0] == fov:
+                intensity_image = label_images[i].split("-")[0].replace(info[1], channel) + ".tif"
+                suffix = "-".join(label_images[i].split("-")[1:]).split(".")[0]
+                data = get_cell_props(os.path.join(label_dir, label_images[i]),
+                                      os.path.join(intensity_dir, intensity_image), min_size=min_size)
+                trench = int(info[2][2:])
+                time = int(info[3][1:-1])
+                data = add_information(data, channel=channel, trench_id=trench, time=time*dt, identity=intensity_image)
+                data_list.append(data)
+        df = combine_data(data_list)
+        if not os.path.isdir(save_dir):
+            os.mkdir(save_dir)
+        df.to_csv(os.path.join(save_dir, f"{fov}_{channel}{suffix}.csv"))
+        save_loc.append(os.path.join(save_dir, f"{fov}_{channel}{suffix}.csv"))
+    return f"saved to {save_loc}"

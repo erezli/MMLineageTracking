@@ -14,11 +14,18 @@ class Lineage:
         self.widths = [cell.minor for cell in cells]
         self.positions = [(cell.centroid_x, cell.centroid_y) for cell in cells]
         self.areas = [cell.area for cell in cells]
+        self.reporter_intensities = [cell.reporter_intensity for cell in cells]
         self.barcode = cells[0].barcode
         self.pole_label = cells[0].poles
 
+        if cells[-1].lyse:
+            self.lyse = True
+        else:
+            self.lyse = False
         self.daughters = (None, None)
         self.parent = None
+
+        self.highlight = False
 
     def set_parent(self, parent):
         self.parent = parent
@@ -45,27 +52,27 @@ class Lineage:
     @classmethod
     def from_tracker(cls, cells_list):
         lineages = []
-        mother_cell = cells_list[0][0]
-        next_line = [(mother_cell, None)]
+        for mother_cell in cells_list:
+            next_line = [(mother_cell, None)]
 
-        def track_line(cell1, parent):
-            line = [cell1]
-            while cell1.divide is False and cell1.daughters:
-                cell1 = cell1.daughters
-                line.append(cell1)
-            lineages.append(cls(line))
-            lineages[-1].set_parent(parent)
-            if parent is not None:
-                parent.set_daughters([lineages[-1]])
-            return cell1
+            def track_line(cell1, parent):
+                line = [cell1]
+                while cell1.divide is False and cell1.daughters:
+                    cell1 = cell1.daughters
+                    line.append(cell1)
+                lineages.append(cls(line))
+                lineages[-1].set_parent(parent)
+                if parent is not None:
+                    parent.set_daughters([lineages[-1]])
+                return cell1
 
-        while len(next_line) != 0:
-            end_cell = track_line(next_line[0][0], next_line[0][1])
-            next_line.pop(0)
-            if isinstance(end_cell.daughters, tuple):
-                next_line.extend([(d, lineages[-1]) for d in end_cell.daughters])
-            elif isinstance(end_cell.daughters, Cell):
-                next_line.append((end_cell.daughters, lineages[-1]))
+            while len(next_line) != 0:
+                end_cell = track_line(next_line[0][0], next_line[0][1])
+                next_line.pop(0)
+                if isinstance(end_cell.daughters, tuple):
+                    next_line.extend([(d, lineages[-1]) for d in end_cell.daughters])
+                elif isinstance(end_cell.daughters, Cell):
+                    next_line.append((end_cell.daughters, lineages[-1]))
 
         return lineages
 
@@ -85,7 +92,7 @@ class Lineage:
             return None
 
     def get_growth_time_constant(self):
-        if self.daughters[0] is not None and self.parent is not None:
+        if self.daughters[0] is not None and self.parent is not None and len(self.resident_time) > 2:
             slope, inter, r, p, se = linregress([t - self.resident_time[0] for t in self.resident_time],
                                                 np.log2(self.lengths))
             if not isnan(slope):
@@ -107,4 +114,5 @@ class Lineage:
         for i in range(len(self.resident_time) - 1):
             dlogA = np.log2(self.areas[i + 1]) - np.log2(self.areas[i])
             dt = self.resident_time[i + 1] - self.resident_time[i]
-            yield dlogA / dt, (self.resident_time[i], self.labels[i])
+            if not isnan(dlogA / dt):
+                yield dlogA / dt, (self.resident_time[i], self.labels[i])

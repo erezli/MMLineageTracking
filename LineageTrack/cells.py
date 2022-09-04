@@ -15,19 +15,23 @@ class Cell:
         # self.local_centroid_y = properties["centroid_local-0"]
         # self.local_centroid_x = properties["centroid_local-1"]
         self.orientation = properties["orientation"]
-        # self.channel_intensities = []
-        # for c in channels:
-        #     self.channel_intensities.append(properties["{}_intensity_mean".format(c)])
-        # if reporter is not None:
-        #     self.reporter_intensities = properties["{}_intensity_mean".format(reporter)]
+        self.channel_intensities = {}
+        for c in channels:
+            self.channel_intensities[c] = properties["{}_intensity_mean".format(c)]
+        if reporter is not None:
+            self.reporter_intensity = properties["{}_intensity_mean".format(reporter)]
+        else:
+            self.reporter_intensity = None
         self.coord = []
         self.divide = False
+        self.out = False
         self.lyse = False
         self.parent_label = None
         self.parent = None
         self.daughters = None
         self.barcode = None
         self.poles = None
+        self.within_safe_zone = False
 
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
@@ -49,7 +53,7 @@ class Cell:
             #              self.local_centroid_y, self.orientation]
             self.coord = np.array([[self.major * growth,
                                     self.centroid_y + offset + self.major * (growth - 1) / 2,
-                                    np.sqrt(self.area) * growth]])
+                                    self.area * growth]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             self.divide = False
@@ -61,10 +65,10 @@ class Cell:
             self.coord = np.array(
                 [[self.major * growth / 2 * 0.9,  # 0.9 is segmentation erosion
                   self.centroid_y + offset + self.major * (growth - 2) / 4,
-                  np.sqrt(self.area) * growth / 2 * 0.9],
+                  self.area * growth / 2 * 0.9],
                  [self.major * growth / 2 * 0.9,  # 0.9 is segmentation erosion
                   self.centroid_y + offset + self.major * (3 * growth - 2) / 4,
-                  np.sqrt(self.area) * growth / 2 * 0.9]])
+                  self.area * growth / 2 * 0.9]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             self.divide = True

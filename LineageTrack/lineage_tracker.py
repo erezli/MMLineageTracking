@@ -45,6 +45,7 @@ class LineageTrack:
         self.trenches = self.df.loc[:, "trench_id"]
         self.trenches = sorted(list(set(self.trenches)))
         self.max_y = self.df.loc[:, "centroid-0"].max()
+        self.reporter = None
 
         # for tracking #
         self.current_trench = 0
@@ -266,12 +267,20 @@ class LineageTrack:
                                    if line.get_growth_time_constant() is not None and
                                    max_thr > line.get_growth_time_constant() > min_thr]
             self.div_interval = np.mean(timer_periods)
-            self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
+            if len(growth_time_consts) <= 2:
+                self.growth_tau = (np.mean(self.growth_taus), np.var(self.growth_taus))
+            else:
+                self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
             # self.growth_tau = (self.growth_tau + self.div_interval) / 2
+            if len(max_lengths) <= 2:
+                max_lengths = []
+                for i in self.length_at_div:
+                    max_lengths.extend(i[1])
             self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
             self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
-            self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
-            self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(np.var(adder_lengths))
+            if len(adder_lengths) < 2:
+                self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
+                self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(np.var(adder_lengths))
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
@@ -330,13 +339,16 @@ class LineageTrack:
         return np.prod(cdf * n + (1 - cdf) * (1 - n))
 
     def pr_div_adder(self, n, dl):
-        if self.skew_model:
-            # cdf = skewnorm.cdf(dl, np.array([self.adder_skew] * len(n)), loc=self.adder_length_paras[0],
-            #                    scale=np.sqrt(self.adder_length_paras[1]))
-            cdf = sn_cdf(dl, self.adder_skew, self.adder_length_paras[0], self.adder_length_paras[1])
+        if self.adder_length_paras[0] and self.adder_length_paras[1] is not None:
+            if self.skew_model:
+                # cdf = skewnorm.cdf(dl, np.array([self.adder_skew] * len(n)), loc=self.adder_length_paras[0],
+                #                    scale=np.sqrt(self.adder_length_paras[1]))
+                cdf = sn_cdf(dl, self.adder_skew, self.adder_length_paras[0], self.adder_length_paras[1])
+            else:
+                cdf = norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1]))
+            return np.prod(cdf * n + (1 - cdf) * (1 - n))
         else:
-            cdf = norm.cdf(dl, loc=self.adder_length_paras[0], scale=np.sqrt(self.adder_length_paras[1]))
-        return np.prod(cdf * n + (1 - cdf) * (1 - n))
+            return 1
 
     def cells_simulator(self, cells_list, p_sp):
         growth = self.calculate_growth()
@@ -366,6 +378,8 @@ class LineageTrack:
                 dl = []
                 for i in range(self.current_number_of_cells):
                     cells_list[i].set_coordinates(division=com[i], growth=growth, offset=offset)
+                    if cells_list[i].coord[-1][1] < self.threshold * 0.9:
+                        cells_list[i].within_safe_zone = True
                     lineage_parent = cells_list[i]
                     while lineage_parent.parent is not None and lineage_parent.parent.divide is False:
                         lineage_parent = lineage_parent.parent
@@ -405,7 +419,11 @@ class LineageTrack:
             # columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
             # for c in columns:
             #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
-            cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
+            if self.reporter:
+                cells_list = [Cell(row, channels, reporter=self.reporter)
+                              for index, row in current_local_data.iterrows()]
+            else:
+                cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
             for i in range(len(cells_list)):
                 cells_list[i].set_coordinates()
         self.current_number_of_cells = len(cells_list)
@@ -415,7 +433,10 @@ class LineageTrack:
         next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                       & (self.df["time_(mins)"] == self.next_frame)
                                       & (self.df["centroid-0"] < threshold)].copy()
-        cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
+        if self.reporter:
+            cells_list = [Cell(row, channels, reporter=self.reporter) for index, row in next_local_data.iterrows()]
+        else:
+            cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
         for i in range(len(cells_list)):
             cells_list[i].set_coordinates()
         self.buffer_next = cells_list
@@ -474,7 +495,8 @@ class LineageTrack:
                 distance2 = np.diagonal(d_mtx)
                 if np.sum(distance2) < np.sum(distance):
                     distance = distance2
-                    idx = [x if idx[x] is not None else None for x in range(len(idx))]
+                    # idx = [x if idx[x] is not None else None for x in range(len(idx))]
+                    idx = [x if x < index_mtx.shape[1] else None for x in range(len(idx))]
                     # print("fake lysis")
             return distance, idx
 
@@ -494,7 +516,8 @@ class LineageTrack:
         else:
             # initialise the barcode for the very first two cells in the first frame
             cells[0].barcode = list([0])
-            cells[1].barcode = list([1])
+            if len(cells) > 1:
+                cells[1].barcode = list([1])
             cells[0].poles = (0, 0)
         if self.probability_mode == "sizer-adder":
             for cell_next, parent_label in zip(self.buffer_next, self.next_track):
@@ -510,8 +533,10 @@ class LineageTrack:
             cells_arrangement = []
             if self.drifting:
                 drift = np.mean([cell.centroid_y for cell in predicted_future[1]])
-            else:
+            elif shift < len(predicted_future[1]):
                 drift = predicted_future[1][shift].coord[0][1]
+            else:
+                drift = predicted_future[1][-1].coord[0][1]
             for cell in predicted_future[1]:
                 for c in cell.coord:
                     cells_arrangement.append(cell)
@@ -539,7 +564,7 @@ class LineageTrack:
                 matched_scenario = predicted_state
                 cells = copy.deepcopy(predicted_future[1])
                 break
-            if score > max_score:
+            if score >= max_score:
                 label_track = []
                 for j in idx:
                     if j is not None:
@@ -601,9 +626,11 @@ class LineageTrack:
         idx_list = range(self.current_number_of_cells)
         self.current_lysis = [i + 1 for i in idx_list if i + 1 not in self.next_track]
         for lysis in self.current_lysis:
-            self.all_cells[self.current_trench][-1][lysis - 1].lyse = True
+            self.all_cells[self.current_trench][-1][lysis - 1].out = True
+            if self.all_cells[self.current_trench][-1][lysis - 1].within_safe_zone:
+                self.all_cells[self.current_trench][-1][lysis - 1].lyse = True
 
-    def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer", p_sp=0,
+    def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer", p_sp=-1,
                      special_reporter=None, show_details=False, ret_df=True, fill_gap=False, adap_dpf=False,
                      drift=False, skew_model=True, update_from_res=False):
         """
@@ -632,6 +659,7 @@ class LineageTrack:
         """
         if trench in self.trenches:
             self.current_trench = int(trench)
+            self.threshold = threshold
             self.buffer_next = None
             self.show_details = show_details
             self.search_mode = search_mode
@@ -643,6 +671,13 @@ class LineageTrack:
             frames = sorted(list(set(frames)))
             if threshold == -1:
                 threshold = self.max_y
+            if special_reporter in self.channels:
+                self.reporter = special_reporter
+                self.channels.remove(special_reporter)
+            elif special_reporter is not None and special_reporter is not self.reporter:
+                print(self.channels)
+                print(special_reporter)
+                raise Exception("the specified channel has no data found")
             data_buffer = {
                 "trench": trench,
                 "track": [],
@@ -674,6 +709,13 @@ class LineageTrack:
                 if self.dpf > self.current_number_of_cells:
                     self.dpf = self.current_number_of_cells
 
+                if len(self.buffer_next) == 0:
+                    if len(current_cells) != 0:
+                        self.store_cells_info(current_cells)
+                    self.next_track = []
+                    self.lysis_cells()
+                    break
+
                 cells = self.score_futures(current_cells, p_sp=p_sp)
                 self.store_cells_info(cells)
                 # index pointers to the current frame cells from next frame
@@ -695,39 +737,33 @@ class LineageTrack:
                 data_buffer["barcode"].append([cell.barcode for cell in cells])
                 data_buffer["poles"].append([cell.poles for cell in cells])
 
-                if i == len(frames) - 2:
-                    barcode_list = []
-                    poles_list = []
-                    assert isinstance(self.buffer_next, list)
-                    for cell, parent_label in zip(self.buffer_next, self.next_track):
-                        if parent_label is not None:
-                            cell.parent_label = parent_label
-                            cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
-                            self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
-                    for cell in self.all_cells[self.current_trench][-1]:
-                        cell.assign_barcode(to_whom="daughter", max_bit=8)
-                        cell.barcode_to_binary(max_bit=8)
-                        cell.set_generation()
-                    for cell in self.buffer_next:
-                        cell.barcode_to_binary(max_bit=8)
-                        barcode_list.append(cell.barcode)
-                        poles_list.append(cell.poles)
-                    self.all_cells[self.current_trench].append(self.buffer_next)
-                    data_buffer["barcode"].append(barcode_list)
-                    data_buffer["poles"].append(poles_list)
+            barcode_list = []
+            poles_list = []
+            assert isinstance(self.buffer_next, list)
+            for cell, parent_label in zip(self.buffer_next, self.next_track):
+                if parent_label is not None:
+                    cell.parent_label = parent_label
+                    cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
+                    self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
+            if len(self.all_cells[self.current_trench]) != 0:
+                for cell in self.all_cells[self.current_trench][-1]:
+                    cell.assign_barcode(to_whom="daughter", max_bit=8)
+                    cell.barcode_to_binary(max_bit=8)
+                    cell.set_generation()
+                for cell in self.buffer_next:
+                    cell.barcode_to_binary(max_bit=8)
+                    barcode_list.append(cell.barcode)
+                    poles_list.append(cell.poles)
+            self.all_cells[self.current_trench].append(self.buffer_next)
+            data_buffer["barcode"].append(barcode_list)
+            data_buffer["poles"].append(poles_list)
 
-                if special_reporter in self.channels:
-                    """
-                    take the reporter channel out of the channel list, pass to the cell object, 
-                    so its data will not be included into the coordinates
-                    """
-                elif special_reporter is not None:
-                    raise Exception("the specified channel has no data found")
+
                 # for testing #
-                if i == 19:
-                    self.show_details = True
-                elif i == 21:
-                    self.show_details = False
+                # if i == 27:
+                #     self.show_details = True
+                # elif i == 29:
+                #     self.show_details = False
                 # if i == 51:
                 #     self.show_details = True
                 # elif i == 53:
@@ -756,7 +792,7 @@ class LineageTrack:
         else:
             return f"""Specified trench id {trench} does not exist"""
 
-    def track_trench_iteratively(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=0,
+    def track_trench_iteratively(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                  special_reporter=None, show_details=False, fill_gap=False,
                                  adap_dpf=True, drift=False, skew_model=True):
         if threshold == -1:
@@ -768,12 +804,15 @@ class LineageTrack:
             thr = int(threshold * (i + 1) / no_steps)
             self.track_trench(trench, thr, max_dpf, search_mode, probability_mode, p_sp, special_reporter, show_details,
                               False, fill_gap, adap_dpf, drift, skew_model, update_from_res=True)
-            probability_mode = "sizer-adder"
+            if self.sizer_length_paras[1] == 0 or self.adder_length_paras[1] == 0:
+                self.update_model_para("unif")
+            else:
+                probability_mode = "sizer-adder"
         return (self.track_trench(trench, threshold, max_dpf, search_mode, probability_mode, p_sp, special_reporter,
-                                  show_details, False, fill_gap, adap_dpf, drift, skew_model, update_from_res=False),
+                                  show_details, False, fill_gap, adap_dpf, drift, skew_model, update_from_res=True),
                 self.all_cells)
 
-    def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=0,
+    def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                    special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False,
                                    fill_gap=False, adap_dpf=True, drift=False, skew_model=True):
         if trenches is None:
@@ -878,8 +917,19 @@ class LineageTrack:
             freq[i] = freq[i] / len(div_dist)
         return freq
 
-    def generate_lineage(self, trench):
-        return Lineage.from_tracker(self.all_cells[trench])
+    def generate_lineage(self, trench, mode="full", frame=None, label=None):
+        if mode == "full":
+            return Lineage.from_tracker(self.all_cells[trench][0])
+        elif mode == "footprint":
+            cell = self.all_cells[trench][frame][label - 1]
+            line = [cell]
+            while cell.parent is not None:
+                cell = cell.parent
+                line.insert(0, cell)
+            return Lineage(line)
+        elif mode == "offspring":
+            mother_cell = self.all_cells[trench][frame][label - 1]
+            return Lineage.from_tracker([mother_cell])
 
 
 # from Charlie
@@ -927,18 +977,22 @@ def sn_cdf(val, a, mean, var):
 
     if a >= 0:
         # x = np.array([[v, 0] for v in val])
-        # cov = a / np.sqrt(1 + a ** 2)
-        # return 2 * multivariate_normal.cdf(x, cov=[[cov, 0], [0, cov]])
+        # roh = -a / np.sqrt(1 + a ** 2)
+        # cov = np.array([[1, roh], [roh, 1]])
+        # return 2 * multivariate_normal.cdf(x, cov=cov)
         return norm.cdf(val) - 2 * owens_t(val, np.array([a] * len(val)))
     else:
         # x = np.array([[-v, 0] for v in val])
-        # cov = - a / np.sqrt(1 + a ** 2)
-        # return 1 - 2 * multivariate_normal.cdf(x, cov=[[cov, 0], [0, cov]])
-        return 1 - norm.cdf(-val) - 2 * owens_t(-val, np.array([a] * len(val)))
+        # roh = a / np.sqrt(1 + a ** 2)
+        # cov = np.array([[1, roh], [roh, 1]])
+        # return 1 - 2 * multivariate_normal.cdf(x, cov=cov)
+        return 1 - (norm.cdf(-val) - 2 * owens_t(-val, np.array([-a] * len(val))))
 
 
 def scoring(p, d):
     if p > 0:
-        return (0.3 + 1 / (1 - np.log10(p))) / ((np.sum(d)) ** 3)
+        return (0.75 + 1 / (1 - np.log10(p))) / ((np.sum(d)) ** 3)
+    elif p == 0:
+        return 0.75 / ((np.sum(d)) ** 3)
     else:
         return 0
