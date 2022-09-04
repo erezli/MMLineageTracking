@@ -46,6 +46,7 @@ class Visualiser:
         self.trenches = sorted(list(set(self.track_df.loc[:, "trench_id"])))
         flat_list_y = [item[1] for sublist in self.track_df.loc[:, "centroid"] for item in sublist]
         self.max_y = max(flat_list_y)
+        self.image_width = None
 
     @classmethod
     def from_path(cls, fov, filepath_t, filepath_l):
@@ -86,10 +87,12 @@ class Visualiser:
             ax_flat[i].set_ylim(300)
 
     def label_images(self, image_dir, mode="connect_daughter", save_dir="./temp/labelled_masks/",
-                     template=None, template_mode="exp", show_other=True, for_frames=None, colour_scale="Greys"):
+                     template=None, template_mode="exp", show_other=True, for_frames=None, colour_scale="Greys",
+                     fluores=False):
         """
         # Todo: can have different template for read and write file names
         Generate images that is labelled by specific mode
+        @param fluores:
         @param image_dir: directory of the images to label
         @param mode: connect_daughter; landscape-line; barcode; landscape-colour-scale; generation-by-poles
         @param save_dir: directory to save the labelled images
@@ -108,6 +111,7 @@ class Visualiser:
         for t in self.trenches:
             times = self.track_df.loc[self.track_df["trench_id"] == t, "time_(mins)"].copy()
             times = sorted(list(set(times)))
+            self.times = times
             # for Python 3.10
             # match mode:
             #     case "connect_daughter"
@@ -158,7 +162,7 @@ class Visualiser:
                     frame1 = "%04d" % i
                     frame2 = "%04d" % (i + 1)
                     cells1 = self.track_df.loc[(self.track_df["trench_id"] == t) &
-                                              (self.track_df["time_(mins)"] == time1)].copy()
+                                               (self.track_df["time_(mins)"] == time1)].copy()
                     cells1.reset_index(drop=True, inplace=True)
                     cells2 = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                                (self.track_df["time_(mins)"] == time2)].copy()
@@ -166,11 +170,16 @@ class Visualiser:
 
                     path2 = generate_file_name(template, "", self.FOV, t, frame2, mode=template_mode)
                     image2 = cv.imread(image_dir + os.path.sep + path2)
+                    if isinstance(fluores, int) and fluores != 0:
+                        image2 *= fluores
                     cv.putText(image2, "t={}".format(time2),
                                (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     if i == 0:
                         path1 = generate_file_name(template, "", self.FOV, t, frame1, mode=template_mode)
                         image1 = cv.imread(image_dir + os.path.sep + path1)
+                        if isinstance(fluores, int) and fluores != 0:
+                            image1 *= fluores
+                        self.image_width = image1.shape[1]
                         cv.putText(image1, "t={}".format(time1),
                                    (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                         landscape = image1
@@ -320,3 +329,22 @@ class Visualiser:
 
             else:
                 return "mode not correct"
+
+    def highlight_lineage(self, lineages, image_path, save_dir="./temp/labelled_masks/"):
+        if isinstance(lineages, list):
+            dt = self.times[1] - self.times[0]
+            landscape = cv.imread(image_path)
+            for line in lineages:
+                for i in range(len(line.resident_time) - 1):
+                    pt1 = (round(line.positions[i][0] +
+                                 (line.resident_time[i] - self.times[0]) / dt * self.image_width),
+                           round(line.positions[i][1]))
+                    pt2 = (round(line.positions[i+1][0] +
+                                 (line.resident_time[i+1] - self.times[0]) / dt * self.image_width),
+                           round(line.positions[i+1][1]))
+                    cv.line(landscape, pt1, pt2, (255, 0, 0), thickness=3)
+            write_path = "highlighted_" + os.path.split(image_path)[1]
+            if not os.path.isdir(save_dir):
+                os.mkdir(save_dir)
+            cv.imwrite(save_dir + os.path.sep + write_path, landscape)
+            print(f"saved as {save_dir + os.path.sep + write_path}")
