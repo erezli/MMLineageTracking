@@ -54,7 +54,7 @@ class Visualiser:
             raise Exception(f"specified file {filepath_t} not found")
         df_t = pd.read_csv(filepath_t, converters={
             "label": ast.literal_eval,
-            "parent_label": ast.literal_eval,
+            "parent_label-1": ast.literal_eval,
             "centroid": ast.literal_eval,
             "barcode": ast.literal_eval,
             "poles": ast.literal_eval
@@ -128,8 +128,8 @@ class Visualiser:
                         position_1 = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
                         cv.drawMarker(image, position_1, (255, 0, 0))
                         if c > 0:
-                            if (cells.at[0, "parent_label"][c] == cells.at[0, "parent_label"][c - 1]) & \
-                                    (cells.at[0, "parent_label"][c] is not None):
+                            if (cells.at[0, "parent_label-1"][c] == cells.at[0, "parent_label-1"][c - 1]) & \
+                                    (cells.at[0, "parent_label-1"][c] is not None):
                                 position_2 = (round(cells.at[0, "centroid"][c - 1][0]),
                                               round(cells.at[0, "centroid"][c - 1][1]))
                                 cv.line(image, position_1, position_2, (0, 255, 0), thickness=2)
@@ -141,7 +141,7 @@ class Visualiser:
                                 cv.putText(image, "from",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                                 middle_position = (middle_position[0], middle_position[1] + 7)
-                                cv.putText(image, f"cell no{int(cells.at[0, 'parent_label'][c])}",
+                                cv.putText(image, f"cell no{int(cells.at[0, 'parent_label-1'][c])}",
                                            middle_position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     write_path = generate_file_name(template, "connected_", self.FOV, t, frame, mode=template_mode)
                     if not os.path.isdir(save_dir):
@@ -174,6 +174,8 @@ class Visualiser:
                         image2 *= fluores
                     cv.putText(image2, "t={}".format(time2),
                                (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                    cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-1"] * 100),
+                               (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     if i == 0:
                         path1 = generate_file_name(template, "", self.FOV, t, frame1, mode=template_mode)
                         image1 = cv.imread(image_dir + os.path.sep + path1)
@@ -188,8 +190,8 @@ class Visualiser:
                     landscape = np.concatenate((landscape, image2), axis=1)
                     image_buffer = image2
                     for c in range(len(cells2.at[0, "label"])):
-                        if cells2.at[0, "parent_label"][c] is not None:
-                            parent = int(cells2.at[0, "parent_label"][c]) - 1
+                        if cells2.at[0, "parent_label-1"][c] is not None:
+                            parent = int(cells2.at[0, "parent_label-1"][c]) - 1
                             position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
                                          round(cells2.at[0, "centroid"][c][1]))
                             position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
@@ -344,6 +346,58 @@ class Visualiser:
                            round(line.positions[i+1][1]))
                     cv.line(landscape, pt1, pt2, (255, 0, 0), thickness=3)
             write_path = "highlighted_" + os.path.split(image_path)[1]
+            if not os.path.isdir(save_dir):
+                os.mkdir(save_dir)
+            cv.imwrite(save_dir + os.path.sep + write_path, landscape)
+            print(f"saved as {save_dir + os.path.sep + write_path}")
+
+    def show_second_classification(self, trench, frame, image_dir, save_dir=False, template=None,
+                                   template_mode="exp", fluores=False):
+
+        if template is None:
+            template = template_mask
+        times = self.track_df.loc[self.track_df["trench_id"] == trench, "time_(mins)"].copy()
+        times = sorted(list(set(times)))
+        offset = 0
+        time1 = times[frame - 1]
+        time2 = times[frame]
+        frame1 = "%04d" % (frame - 1)
+        frame2 = "%04d" % frame
+        cells1 = self.track_df.loc[(self.track_df["trench_id"] == trench) &
+                                   (self.track_df["time_(mins)"] == time1)].copy()
+        cells1.reset_index(drop=True, inplace=True)
+        cells2 = self.track_df.loc[(self.track_df["trench_id"] == trench) &
+                                   (self.track_df["time_(mins)"] == time2)].copy()
+        cells2.reset_index(drop=True, inplace=True)
+
+        path2 = generate_file_name(template, "", self.FOV, trench, frame2, mode=template_mode)
+        image2 = cv.imread(image_dir + os.path.sep + path2)
+        if isinstance(fluores, int) and fluores != 0:
+            image2 *= fluores
+        cv.putText(image2, "t={}".format(time2),
+                   (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+        cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-2"] * 100),
+                   (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+        path1 = generate_file_name(template, "", self.FOV, trench, frame1, mode=template_mode)
+        image1 = cv.imread(image_dir + os.path.sep + path1)
+        if isinstance(fluores, int) and fluores != 0:
+            image1 *= fluores
+        self.image_width = image1.shape[1]
+        cv.putText(image1, "t={}".format(time1),
+                   (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+        landscape = np.concatenate((image1, image2), axis=1)
+        for c in range(len(cells2.at[0, "label"])):
+            if cells2.at[0, "parent_label-2"][c] is not None:
+                parent = int(cells2.at[0, "parent_label-2"][c]) - 1
+                position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
+                             round(cells2.at[0, "centroid"][c][1]))
+                position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
+                             round(cells1.at[0, "centroid"][parent][1]))
+                cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
+        plt.figure(figsize=(5, 20))
+        plt.imshow(landscape)
+        if save_dir:
+            write_path = generate_file_name(template, "second_classification_", self.FOV, trench, "", mode=template_mode)
             if not os.path.isdir(save_dir):
                 os.mkdir(save_dir)
             cv.imwrite(save_dir + os.path.sep + write_path, landscape)
