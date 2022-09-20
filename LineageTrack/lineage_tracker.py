@@ -56,7 +56,7 @@ class LineageTrack:
         self.buffer_next = None
         self.show_details = False
         self.search_mode = "SeqMatch"
-        self.probability_mode = "sizer"
+        self.probability_mode = "sizer-adder"
         self.dpf = 2
         self.fill_gap = False
         self.drifting = False
@@ -64,6 +64,8 @@ class LineageTrack:
         self.sum_score = None
         self.max_score = None
         self.sec_score = None
+        self.sum_prior = None
+        self.avg_distance = None
         self.threshold = None
 
         # model parameters #
@@ -83,7 +85,9 @@ class LineageTrack:
         # results #
         self.current_track = []
         self.next_track = []
+        self.next_track_2 = []
         self.current_lysis = []
+        self.current_lysis_2 = None
         self.all_cells = dict()
 
         print("Finished loading the data")
@@ -195,14 +199,14 @@ class LineageTrack:
         mother_cell_info = (trench, mcell)
         return mother_cell_info, idx_p[0]
 
-    def collect_model_para(self, mother_cell, e_phase_idx, plot=False):
+    def collect_model_para(self, mother_cell, peak_idx, plot=False):
         """
         estimate parameters for the model of cells growth and division in exponential phase
         user defines the period during which cells grow exponentially by examining the data
         *THIS SHOULD ONLY RUN ONCE FOR EACH MOTHER CELL IN EVERY TRENCH*
         @param mother_cell: first entry is the trench id, second entry is the length and time of the mother cell
         @type mother_cell: tuple
-        @param e_phase_idx: sliced index 1D array for exponential phase
+        @param peak_idx: sliced index 1D array for exponential phase
         @param plot: whether to plot the model or not
         This collects division time interval, time constant - tau, for the exponential growth model,
         and the max length of cells
@@ -211,7 +215,7 @@ class LineageTrack:
             return f"""this mother cell at trench {mother_cell[0]} has already been collected"""
         else:
             self.mother_cell_collected.append(mother_cell[0])
-            e_peaks = [mother_cell[1][p, :] for p in e_phase_idx]
+            e_peaks = [mother_cell[1][p, :] for p in peak_idx]
             e_peaks = np.array(e_peaks)
 
             growth_taus = []
@@ -219,11 +223,11 @@ class LineageTrack:
             division_intervals = [e_peaks[i + 1][0] - e_peaks[i][0] for i in range(len(e_peaks) - 1)]
             division_times = list(e_peaks[:, 0])
             max_length = list(e_peaks[:, 1])
-            d_length = [mother_cell[1][e_phase_idx[i + 1], 1] - mother_cell[1][e_phase_idx[i] + 1, 1]
-                        for i in range(len(e_phase_idx) - 1)]
+            d_length = [mother_cell[1][peak_idx[i + 1], 1] - mother_cell[1][peak_idx[i] + 1, 1]
+                        for i in range(len(peak_idx) - 1)]
 
-            for i in range(len(e_phase_idx) - 1):
-                growth = mother_cell[1][e_phase_idx[i] + 1:e_phase_idx[i + 1] + 1]
+            for i in range(len(peak_idx) - 1):
+                growth = mother_cell[1][peak_idx[i] + 1:peak_idx[i + 1] + 1]
                 slope, inter, r, p, se = linregress(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
                 if plot:
                     plt.plot(growth[:, 0] - growth[0, 0], np.log2(growth[:, 1]))
@@ -240,19 +244,31 @@ class LineageTrack:
             self.length_at_div.append([division_times, max_length])
             self.d_length += d_length
 
-    def update_model_para(self, model="unif"):
+    def update_model_para(self, model="unif", Bessel=True):
         # Todo: for cells growing heterogeneously or the growth distribution changes over time - collect model
         #  parameter across mother cells
         if model == "unif":
             self.div_interval = np.mean(self.div_intervals)
-            self.growth_tau = (np.mean(self.growth_taus), np.var(self.growth_taus))
             max_lengths = []
             for i in self.length_at_div:
                 max_lengths.extend(i[1])
-            self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
-            self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
-            self.adder_length_paras = (np.mean(self.d_length), np.var(self.d_length))
-            self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(np.var(self.d_length))
+            if Bessel:
+                self.growth_tau = (np.mean(self.growth_taus),
+                                   np.var(self.growth_taus) * len(self.growth_taus)/(len(self.growth_taus) - 1))
+                self.sizer_length_paras = (np.mean(max_lengths),
+                                           np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(
+                    np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
+                self.adder_length_paras = (np.mean(self.d_length),
+                                           np.var(self.d_length) * len(self.d_length)/(len(self.d_length) - 1))
+                self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(
+                    np.var(self.d_length) * len(self.d_length)/(len(self.d_length) - 1))
+            else:
+                self.growth_tau = (np.mean(self.growth_taus), np.var(self.growth_taus))
+                self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
+                self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
+                self.adder_length_paras = (np.mean(self.d_length), np.var(self.d_length))
+                self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(np.var(self.d_length))
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
@@ -279,24 +295,36 @@ class LineageTrack:
                                    if line.get_growth_time_constant() is not None and
                                    max_thr > line.get_growth_time_constant() > min_thr]
             self.div_interval = np.mean(timer_periods)
-            if len(growth_time_consts) <= 2:
-                self.growth_tau = (np.mean(self.growth_taus), np.var(self.growth_taus))
-            else:
-                self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
-            # self.growth_tau = (self.growth_tau + self.div_interval) / 2
+            if len(growth_time_consts) > 2:
+                if Bessel:
+                    self.growth_tau = (np.mean(growth_time_consts),
+                                       np.var(growth_time_consts) *
+                                       len(growth_time_consts)/(len(growth_time_consts) - 1))
+                else:
+                    self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
             if len(max_lengths) <= 2:
                 max_lengths = []
                 for i in self.length_at_div:
                     max_lengths.extend(i[1])
-            self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
-            self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
-            if len(adder_lengths) > 2:
-                self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
-                self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(np.var(adder_lengths))
+            if Bessel:
+                self.sizer_length_paras = (np.mean(max_lengths),
+                                           np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(
+                    np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
             else:
-                self.adder_length_paras = (np.mean(self.d_length), np.var(self.d_length))
-                self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(
-                    np.var(self.d_length))
+                self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
+                self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
+            if len(adder_lengths) > 2:
+                if Bessel:
+                    self.adder_length_paras = (np.mean(adder_lengths),
+                                               np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                    self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
+                        np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                else:
+                    self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
+                    self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
+                        np.var(adder_lengths))
+
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
@@ -318,12 +346,24 @@ class LineageTrack:
                 growth_time_consts += [line.get_growth_time_constant() for line in lineages
                                        if line.get_growth_time_constant() is not None]
             self.div_interval = np.mean(timer_periods)
-            self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
-            # self.growth_tau = (self.growth_tau + self.div_interval) / 2
-            self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
-            self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
-            self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
-            self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(np.var(adder_lengths))
+            if Bessel:
+                self.growth_tau = (np.mean(growth_time_consts),
+                                   np.var(growth_time_consts) * len(growth_time_consts)/(len(growth_time_consts) - 1))
+                self.sizer_length_paras = (np.mean(max_lengths),
+                                           np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(
+                    np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                self.adder_length_paras = (np.mean(adder_lengths),
+                                           np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
+                    np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+            else:
+                self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
+                self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
+                self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
+                self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
+                self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
+                    np.var(adder_lengths))
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
@@ -395,9 +435,7 @@ class LineageTrack:
         #     prob = self.pr_div_sizer(np.array([0] * len(cells_list)), [c.major for c in cells_list])
 
         cells_future = [p_sp, cells_list]
-        # cells_futures.append(cells_future)
         cells_state = ["SP"] * len(cells_list)
-        # cells_states.append(cells_state)
         yield cells_future, cells_state
         for d in range(self.dpf + 1):
             d_list = []
@@ -438,35 +476,35 @@ class LineageTrack:
         # these cells_futures is a list of tuples (probability, cells) and cells is a list of object Cell
         # return cells_futures, cells_states
 
-    def load_current_frame(self, threshold, channels):
+    def load_current_frame(self):
         if self.buffer_next:
             cells_list = self.buffer_next
         else:
             current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                              & (self.df["time_(mins)"] == self.current_frame)
-                                             & (self.df["centroid-0"] < threshold)].copy()
+                                             & (self.df["centroid-0"] < self.threshold)].copy()
             # normalise? features do not have the same units - maybe consider only using geometrical features
             # columns = [col for col in self.properties if col not in ["trench_id", "time_(mins)", "label"]]
             # for c in columns:
             #    current_local_data[c] = MinMaxScaler().fit_transform(np.array(current_local_data[c]).reshape(-1, 1))
             if self.reporter:
-                cells_list = [Cell(row, channels, reporter=self.reporter)
+                cells_list = [Cell(row, self.channels, reporter=self.reporter)
                               for index, row in current_local_data.iterrows()]
             else:
-                cells_list = [Cell(row, channels) for index, row in current_local_data.iterrows()]
+                cells_list = [Cell(row, self.channels) for index, row in current_local_data.iterrows()]
             for i in range(len(cells_list)):
                 cells_list[i].set_coordinates()
         self.current_number_of_cells = len(cells_list)
         return cells_list
 
-    def load_next_frame(self, threshold, channels):
+    def load_next_frame(self):
         next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                       & (self.df["time_(mins)"] == self.next_frame)
-                                      & (self.df["centroid-0"] < threshold)].copy()
+                                      & (self.df["centroid-0"] < self.threshold)].copy()
         if self.reporter:
-            cells_list = [Cell(row, channels, reporter=self.reporter) for index, row in next_local_data.iterrows()]
+            cells_list = [Cell(row, self.channels, reporter=self.reporter) for index, row in next_local_data.iterrows()]
         else:
-            cells_list = [Cell(row, channels) for index, row in next_local_data.iterrows()]
+            cells_list = [Cell(row, self.channels) for index, row in next_local_data.iterrows()]
         for i in range(len(cells_list)):
             cells_list[i].set_coordinates()
         self.buffer_next = cells_list
@@ -575,13 +613,12 @@ class LineageTrack:
             for cell in predicted_future[1]:
                 for c in cell.coord:
                     cells_arrangement.append(cell)
-                    points.append([c[0], (c[1] - drift), c[2]])  # Todo: make y coord less significant
+                    points.append([c[0], (c[1] - drift), c[2]])
             points = np.array(points)
             distance, idx = self.nearest_neighbour(points, true_coord)
             # score = pr / np.sum(distance)
             # for stronger influence of distance
             try:
-                # Todo: justification?
                 # score = (0.3 + pr ** 0.5) / ((np.sum(distance)) ** 3)
                 score = scoring(pr, distance)
                 self.sum_score += score
@@ -589,7 +626,7 @@ class LineageTrack:
                     self.sum_prior += pr
                 self.avg_distance += np.mean(distance)
             except RuntimeWarning:
-                print("wow distance too small?")
+                print("RuntimeWarning - consider divide by zero error")
                 print((np.mean(distance)))
                 score = float("inf")
                 label_track = []
@@ -631,7 +668,7 @@ class LineageTrack:
                 cells_2 = copy.deepcopy(predicted_future[1])
             if self.show_details:
                 print("the simulated scenario: {}".format(predicted_state))
-                print([l.label for l in cells_arrangement])
+                print([ll.label for ll in cells_arrangement])
                 print(idx)
                 print(points)
                 print("with probability: {}".format(pr))
@@ -703,8 +740,8 @@ class LineageTrack:
         idx_list = range(self.current_number_of_cells)
         self.current_lysis_2 = [i + 1 for i in idx_list if i + 1 not in self.next_track_2]
 
-    def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer", p_sp=-1,
-                     special_reporter=None, show_details=False, ret_df=True, fill_gap=False, adap_dpf=False,
+    def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer-adder",
+                     p_sp=-1, special_reporter=None, show_details=False, ret_df=True, fill_gap=False, adap_dpf=False,
                      drift=False, skew_model=True, update_from_res=False):
         """
         Track cells in specified trench, results are stored in a pandas DataFrame, with a colume that contains
@@ -743,7 +780,7 @@ class LineageTrack:
             frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
             frames = sorted(list(set(frames)))
             if threshold == -1:
-                threshold = self.max_y
+                self.threshold = self.max_y
             if special_reporter in self.channels:
                 self.reporter = special_reporter
                 self.channels.remove(special_reporter)
@@ -773,12 +810,12 @@ class LineageTrack:
                 self.next_frame = frames[i + 1]
                 self.dt = self.next_frame - self.current_frame
                 self.current_track = self.next_track
-                current_cells = self.load_current_frame(threshold, self.channels)
+                current_cells = self.load_current_frame()
                 if self.show_details:
                     print("looking at cells: ")
                     for x in range(len(current_cells)):
                         print(current_cells[x])
-                self.load_next_frame(threshold, self.channels)
+                self.load_next_frame()
                 # points = np.array([cell.set_coordinates(0) for cell in self.buffer_next])
                 if adap_dpf:
                     self.dpf = max_dpf + max(0, len(self.buffer_next) - self.current_number_of_cells)
@@ -816,20 +853,28 @@ class LineageTrack:
                     data_buffer["label"].append([cell.label for cell in current_cells])
                     data_buffer["track_frame"].append(self.current_frame)  # * self.current_number_of_cells)
                     data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in cells])
+                else:
+                    data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][i-1]])
+                    data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][i-1]])
 
                 data_buffer["track-1"].append(self.next_track)
                 data_buffer["confidence-1"].append(confidence)
                 data_buffer["track-2"].append(self.next_track_2)
                 data_buffer["confidence-2"].append(confidence_2)
-                data_buffer["lysis-1"].append(self.current_lysis)
-                data_buffer["lysis-2"].append(self.current_lysis_2)
                 data_buffer["label"].append([cell.label for cell in self.buffer_next if self.buffer_next is not None])
-                data_buffer["lysis_frame"].append(self.current_frame)  # * len(self.current_lysis))
                 data_buffer["track_frame"].append(self.next_frame)  # * len(self.next_track))
                 data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in self.buffer_next
                                              if self.buffer_next is not None])
-                data_buffer["barcode"].append([cell.barcode for cell in cells])
-                data_buffer["poles"].append([cell.poles for cell in cells])
+
+                data_buffer["lysis-1"].append(self.current_lysis)
+                data_buffer["lysis-2"].append(self.current_lysis_2)
+                data_buffer["lysis_frame"].append(self.current_frame)  # * len(self.current_lysis))
+
+                # for testing #
+                # if i == 27:
+                #     self.show_details = True
+                # elif i == 29:
+                #     self.show_details = False
 
             barcode_list = []
             poles_list = []
@@ -839,30 +884,23 @@ class LineageTrack:
                     cell.parent_label = parent_label
                     cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
                     self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
-            if len(self.all_cells[self.current_trench]) != 0:
+            if len(self.all_cells[self.current_trench][-1]) != 0:
                 for cell in self.all_cells[self.current_trench][-1]:
                     cell.assign_barcode(to_whom="daughter", max_bit=8)
                     cell.barcode_to_binary(max_bit=8)
                     cell.set_generation()
-                for cell in self.buffer_next:
-                    cell.barcode_to_binary(max_bit=8)
-                    barcode_list.append(cell.barcode)
-                    poles_list.append(cell.poles)
+                data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][-1]])
+                data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][-1]])
+            for cell in self.buffer_next:
+                cell.barcode_to_binary(max_bit=8)
+                barcode_list.append(cell.barcode)
+                poles_list.append(cell.poles)
             self.all_cells[self.current_trench].append(self.buffer_next)
             data_buffer["barcode"].append(barcode_list)
             data_buffer["poles"].append(poles_list)
 
-            print(np.mean(number_cells))
+            # print(np.mean(number_cells))
 
-                # for testing #
-                # if i == 27:
-                #     self.show_details = True
-                # elif i == 29:
-                #     self.show_details = False
-                # if i == 51:
-                #     self.show_details = True
-                # elif i == 53:
-                #     self.show_details = False
             if update_from_res:
                 self.update_model_para("lineage-trench")
             if ret_df:
@@ -895,10 +933,10 @@ class LineageTrack:
 
     def track_trench_iteratively(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                  special_reporter=None, show_details=False, fill_gap=False,
-                                 adap_dpf=True, drift=False, skew_model=True):
+                                 adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200):
         if threshold == -1:
             threshold = self.max_y
-        no_steps = round(threshold / 200)  # Todo: add argument to change 200
+        no_steps = round(threshold / thresh_per_iter)
         self.update_model_para("unif")
         probability_mode = "sizer-adder"
         for i in range(no_steps - 1):
@@ -1092,24 +1130,24 @@ def sn_cdf(val, a, mean, var):
     val = (np.array(val) - mean) / np.sqrt(var)
     if a >= 0:
         x = np.array([[v, 0] for v in val])
-        roh = -a / np.sqrt(1 + a ** 2)
-        cov = np.array([[1, roh], [roh, 1]])
+        rho = -a / np.sqrt(1 + a ** 2)
+        cov = np.array([[1, rho], [rho, 1]])
         return 2 * multivariate_normal.cdf(x, cov=cov)
     else:
         x = np.array([[-v, 0] for v in val])
-        roh = a / np.sqrt(1 + a ** 2)
-        cov = np.array([[1, roh], [roh, 1]])
+        rho = a / np.sqrt(1 + a ** 2)
+        cov = np.array([[1, rho], [rho, 1]])
         return 1 - 2 * multivariate_normal.cdf(x, cov=cov)
     # if a >= 0:
     #     # x = np.array([[v, 0] for v in val])
-    #     # roh = -a / np.sqrt(1 + a ** 2)
-    #     # cov = np.array([[1, roh], [roh, 1]])
+    #     # rho = -a / np.sqrt(1 + a ** 2)
+    #     # cov = np.array([[1, rho], [rho, 1]])
     #     # return 2 * multivariate_normal.cdf(x, cov=cov)
     #     return norm.cdf(val) - 2 * owens_t(val, np.array([a] * len(val)))
     # else:
     #     # x = np.array([[-v, 0] for v in val])
-    #     # roh = a / np.sqrt(1 + a ** 2)
-    #     # cov = np.array([[1, roh], [roh, 1]])
+    #     # rho = a / np.sqrt(1 + a ** 2)
+    #     # cov = np.array([[1, rho], [rho, 1]])
     #     # return 1 - 2 * multivariate_normal.cdf(x, cov=cov)
     #     return 1 - (norm.cdf(-val) - 2 * owens_t(-val, np.array([-a] * len(val))))
 
