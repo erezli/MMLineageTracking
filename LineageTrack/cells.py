@@ -46,7 +46,7 @@ class Cell:
         @return: a 2D array of one or two [length, y position]
         """
         if reset_original:
-            self.coord = np.array([[self.major, self.centroid_y]])
+            self.coord = np.array([[self.major, self.centroid_y, self.area]])
             return self.coord
         if division == 0:
             # self.coord = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,

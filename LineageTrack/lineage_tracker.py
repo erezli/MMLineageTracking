@@ -53,6 +53,7 @@ class LineageTrack:
         self.next_frame = 0
         self.dt = 0
         self.current_number_of_cells = 0
+        self.current_cells = None
         self.buffer_next = None
         self.show_details = False
         self.search_mode = "SeqMatch"
@@ -67,6 +68,7 @@ class LineageTrack:
         self.sum_prior = None
         self.avg_distance = None
         self.threshold = None
+        self.tracked = None
 
         # model parameters #
         self.div_intervals = []
@@ -86,6 +88,7 @@ class LineageTrack:
         self.current_track = []
         self.next_track = []
         self.next_track_2 = []
+        self.tracked_labels = []
         self.current_lysis = []
         self.current_lysis_2 = None
         self.all_cells = dict()
@@ -254,21 +257,22 @@ class LineageTrack:
                 max_lengths.extend(i[1])
             if Bessel:
                 self.growth_tau = (np.mean(self.growth_taus),
-                                   np.var(self.growth_taus) * len(self.growth_taus)/(len(self.growth_taus) - 1))
+                                   np.var(self.growth_taus) * len(self.growth_taus) / (len(self.growth_taus) - 1))
                 self.sizer_length_paras = (np.mean(max_lengths),
-                                           np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                                           np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
                 self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(
                     np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
                 self.adder_length_paras = (np.mean(self.d_length),
-                                           np.var(self.d_length) * len(self.d_length)/(len(self.d_length) - 1))
+                                           np.var(self.d_length) * len(self.d_length) / (len(self.d_length) - 1))
                 self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(
-                    np.var(self.d_length) * len(self.d_length)/(len(self.d_length) - 1))
+                    np.var(self.d_length) * len(self.d_length) / (len(self.d_length) - 1))
             else:
                 self.growth_tau = (np.mean(self.growth_taus), np.var(self.growth_taus))
                 self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
                 self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
                 self.adder_length_paras = (np.mean(self.d_length), np.var(self.d_length))
-                self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(np.var(self.d_length))
+                self.adder_skew = 3 * (np.mean(self.d_length) - np.median(self.d_length)) / np.sqrt(
+                    np.var(self.d_length))
             print(f"""
                     The average time interval for division is {self.div_interval}
                     The time constant for exponential growth is {self.growth_tau}
@@ -299,7 +303,7 @@ class LineageTrack:
                 if Bessel:
                     self.growth_tau = (np.mean(growth_time_consts),
                                        np.var(growth_time_consts) *
-                                       len(growth_time_consts)/(len(growth_time_consts) - 1))
+                                       len(growth_time_consts) / (len(growth_time_consts) - 1))
                 else:
                     self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
             if len(max_lengths) <= 2:
@@ -308,18 +312,18 @@ class LineageTrack:
                     max_lengths.extend(i[1])
             if Bessel:
                 self.sizer_length_paras = (np.mean(max_lengths),
-                                           np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                                           np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
                 self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(
-                    np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                    np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
             else:
                 self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
                 self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(np.var(max_lengths))
             if len(adder_lengths) > 2:
                 if Bessel:
                     self.adder_length_paras = (np.mean(adder_lengths),
-                                               np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                                               np.var(adder_lengths) * len(adder_lengths) / (len(adder_lengths) - 1))
                     self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
-                        np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                        np.var(adder_lengths) * len(adder_lengths) / (len(adder_lengths) - 1))
                 else:
                     self.adder_length_paras = (np.mean(adder_lengths), np.var(adder_lengths))
                     self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
@@ -348,15 +352,15 @@ class LineageTrack:
             self.div_interval = np.mean(timer_periods)
             if Bessel:
                 self.growth_tau = (np.mean(growth_time_consts),
-                                   np.var(growth_time_consts) * len(growth_time_consts)/(len(growth_time_consts) - 1))
+                                   np.var(growth_time_consts) * len(growth_time_consts) / (len(growth_time_consts) - 1))
                 self.sizer_length_paras = (np.mean(max_lengths),
-                                           np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                                           np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
                 self.sizer_skew = 3 * (np.mean(max_lengths) - np.median(max_lengths)) / np.sqrt(
-                    np.var(max_lengths) * len(max_lengths)/(len(max_lengths) - 1))
+                    np.var(max_lengths) * len(max_lengths) / (len(max_lengths) - 1))
                 self.adder_length_paras = (np.mean(adder_lengths),
-                                           np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                                           np.var(adder_lengths) * len(adder_lengths) / (len(adder_lengths) - 1))
                 self.adder_skew = 3 * (np.mean(adder_lengths) - np.median(adder_lengths)) / np.sqrt(
-                    np.var(adder_lengths) * len(adder_lengths)/(len(adder_lengths) - 1))
+                    np.var(adder_lengths) * len(adder_lengths) / (len(adder_lengths) - 1))
             else:
                 self.growth_tau = (np.mean(growth_time_consts), np.var(growth_time_consts))
                 self.sizer_length_paras = (np.mean(max_lengths), np.var(max_lengths))
@@ -435,18 +439,31 @@ class LineageTrack:
         #     prob = self.pr_div_sizer(np.array([0] * len(cells_list)), [c.major for c in cells_list])
 
         cells_future = [p_sp, cells_list]
-        cells_state = ["SP"] * len(cells_list)
+        if self.tracked:
+            additional = self.tracked[3][0]
+        else:
+            additional = 0
+        cells_state = ["SP"] * (len(cells_list) + additional)
         yield cells_future, cells_state
         for d in range(self.dpf + 1):
             d_list = []
             d_list.extend([1] * d)
-            d_list.extend([0] * (self.current_number_of_cells - d))
+            if self.tracked:
+                d_list.extend([0] * (self.current_number_of_cells - len(self.tracked[0]) - d))
+            else:
+                d_list.extend([0] * (self.current_number_of_cells - d))
             # combinations = set(list(itertools.permutations(d_list))) # very wasteful
             for com in binary_permutations(d_list):
-                offset = 0
                 lengths = []
                 dl = []
-                for i in range(self.current_number_of_cells):
+                offset = 0
+                if self.tracked:
+                    com_whole = self.tracked[0] + com
+                    len_tracked = len(self.tracked[0])
+                else:
+                    com_whole = com
+                    len_tracked = 0
+                for i in range(self.current_number_of_cells - len_tracked):
                     cells_list[i].set_coordinates(division=com[i], growth=growth, offset=offset)
                     if cells_list[i].coord[-1][1] < self.threshold * 0.9:
                         cells_list[i].within_safe_zone = True
@@ -460,7 +477,7 @@ class LineageTrack:
                     # prob *= prob_0 * self.pr_div_sizer(0, cells_list[i].coord[0][0])
                     # prob *= prob_1 * self.pr_div_sizer(1, cells_list[i].coord[0][0] * 2)
                     lengths.append(cells_list[i].major * growth)
-                    if i != self.current_number_of_cells - 1 and self.fill_gap is True:
+                    if i != self.current_number_of_cells - len_tracked - 1 and self.fill_gap is True:
                         if (cells_list[i].major + cells_list[i + 1].major) * growth / 2 * 1.1 < \
                                 (cells_list[i + 1].centroid_y - cells_list[i].centroid_y):
                             offset = max(0, offset - ((cells_list[i + 1].centroid_y - cells_list[i].centroid_y) -
@@ -471,14 +488,19 @@ class LineageTrack:
                     prob = self.pr_div_sizer_adder(np.array(com), dl, lengths)
                 # Todo: probability of division - dependency between cells in a trench
                 cells_future = [prob, cells_list]
-                cells_state = ["Growing" if x == 0 else "Divided!" for x in com]
+                cells_state = ["Growing" if x == 0 else "Divided!" for x in com_whole]
                 yield cells_future, cells_state
         # these cells_futures is a list of tuples (probability, cells) and cells is a list of object Cell
         # return cells_futures, cells_states
 
     def load_current_frame(self):
         if self.buffer_next:
-            cells_list = self.buffer_next
+            if self.tracked:
+                cells_to_add = self.tracked[5]
+            else:
+                cells_to_add = []
+            trench_cells = cells_to_add + self.buffer_next
+            cells_list = trench_cells
         else:
             current_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                              & (self.df["time_(mins)"] == self.current_frame)
@@ -495,7 +517,7 @@ class LineageTrack:
             for i in range(len(cells_list)):
                 cells_list[i].set_coordinates()
         self.current_number_of_cells = len(cells_list)
-        return cells_list
+        self.current_cells = cells_list
 
     def load_next_frame(self):
         next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
@@ -574,31 +596,50 @@ class LineageTrack:
             return distance, idx
 
     def store_cells_info(self, cells):
-        if len(self.all_cells[self.current_trench]) != 0:  # not the first frame
+        # Todo: only update the untracked and truncated cells
+        if self.tracked:
+            cells_to_add = self.tracked[4]
+        else:
+            cells_to_add = []
+        trench_cells = cells_to_add + cells
+
+        for i in range(len(trench_cells)):
+            trench_cells[i].set_coordinates(reset_original=True)
+
+        if self.i != 0:  # not the first frame
             # update previous frame cells from the previous tracking results
-            for cell, parent_label in zip(cells, self.current_track):
+            for cell in self.all_cells[self.current_trench][self.i - 1]:
+                cell.daughters = None
+            for cell, parent_label in zip(trench_cells, self.current_track):
                 if parent_label is not None:
                     cell.parent_label = parent_label
-                    cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
-                    self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
+                    cell.set_parent(self.all_cells[self.current_trench][self.i - 1][int(parent_label - 1)])
+                    self.all_cells[self.current_trench][self.i - 1][int(parent_label - 1)].set_daughters(cell)
             # assign barcode and poles to some cells
-            for cell in self.all_cells[self.current_trench][-1]:
-                cell.assign_barcode(to_whom="daughter", max_bit=8)
+            for cell in self.all_cells[self.current_trench][self.i - 1]:
+                try:
+                    cell.assign_barcode(to_whom="daughter", max_bit=8)
+                except TypeError:
+                    print(f"cell {cell.label} at time {cell.time}")
                 cell.barcode_to_binary(max_bit=8)
                 cell.set_generation()
         else:
             # initialise the barcode for the very first two cells in the first frame
-            cells[0].barcode = list([0])
-            if len(cells) > 1:
-                cells[1].barcode = list([1])
-            cells[0].poles = (0, 0)
+            trench_cells[0].barcode = list([0])
+            if len(trench_cells) > 1:
+                trench_cells[1].barcode = list([1])
+            trench_cells[0].poles = (0, 0)
         if self.probability_mode == "sizer-adder":
             for cell_next, parent_label in zip(self.buffer_next, self.next_track):
                 if parent_label is not None:
-                    cell_next.set_parent(cells[int(parent_label) - 1])
-        self.all_cells[self.current_trench].append(cells)
+                    cell_next.set_parent(trench_cells[int(parent_label) - 1])
+        if self.tracked:
+            self.all_cells[self.current_trench][self.i] = trench_cells
+        else:
+            self.all_cells[self.current_trench].append(trench_cells)
 
     def calc_score(self, cells_list, p_sp, true_coord, matched_scenario, matched_scenario_2, cells, cells_2, shift=0):
+        # Todo: using index will be wrong for cases tracked cells are removed
         # for i in range(len(predicted_future)):
         for predicted_future, predicted_state in self.cells_simulator(cells_list, p_sp=p_sp):
             pr = predicted_future[0]
@@ -606,10 +647,13 @@ class LineageTrack:
             cells_arrangement = []
             if self.drifting:
                 drift = np.mean([cell.centroid_y for cell in predicted_future[1]])
+            elif self.tracked:
+                drift = self.tracked[1][0]
             elif shift < len(predicted_future[1]):
                 drift = predicted_future[1][shift].coord[0][1]
             else:
                 drift = predicted_future[1][-1].coord[0][1]
+            # Todo: if cumulative here, the drift should the be the bottom of the last tracked cell
             for cell in predicted_future[1]:
                 for c in cell.coord:
                     cells_arrangement.append(cell)
@@ -678,7 +722,7 @@ class LineageTrack:
                 # print("\n")
         return (matched_scenario, matched_scenario_2), (cells, cells_2)
 
-    def score_futures(self, current_cells, p_sp=0):
+    def score_futures(self, p_sp=0):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
@@ -687,9 +731,11 @@ class LineageTrack:
         matched_scenario_2 = []
         cells = None
         cells_2 = None
-        mcell_current = current_cells[0].coord
+        mcell_current = self.current_cells[0].coord
         if self.drifting:
             drift = np.mean([cell.centroid_y for cell in self.buffer_next])
+        elif self.tracked:
+            drift = self.tracked[1][1]
         else:
             drift = self.buffer_next[0].coord[0][1]
         for cell in self.buffer_next:
@@ -700,19 +746,20 @@ class LineageTrack:
         self.sum_score = 0
         self.sum_prior = 0
         self.avg_distance = 0
-        (matched_scenario, matched_scenario_2), (cells, cells_2) = self.calc_score(current_cells, p_sp, true_coord,
+        (matched_scenario, matched_scenario_2), (cells, cells_2) = self.calc_score(self.current_cells, p_sp, true_coord,
                                                                                    matched_scenario, matched_scenario_2,
                                                                                    cells, cells_2, shift=0)
+        # Todo: Dont do this if eliminated tracked
         if abs(self.buffer_next[0].coord[0][1] - mcell_current[0][1]) >= \
-                ((mcell_current[0][0] + self.buffer_next[0].coord[0][0]) * 0.375):
+                ((mcell_current[0][0] + self.buffer_next[0].coord[0][0]) * 0.375) and not self.tracked:
             # the mother cell could have lysed since the first cell shifts more than 3/4 of its length between frames
-            arr = np.asarray([c[1] for cell in current_cells for c in cell.coord])
+            arr = np.asarray([c[1] for cell in self.current_cells for c in cell.coord])
             index = (np.abs(arr - self.buffer_next[0].coord[0][1])).argmin()
             if self.show_details:
                 print("mother cell lyses or possibly a huge shift in all cells at t = {}min".format(self.current_frame))
                 print("shift by {} cells".format(index))
-            (matched_scenario, matched_scenario_2), (cells, cells_2) = self.calc_score(current_cells, p_sp, true_coord,
-                                                                                       matched_scenario,
+            (matched_scenario, matched_scenario_2), (cells, cells_2) = self.calc_score(self.current_cells, p_sp,
+                                                                                       true_coord, matched_scenario,
                                                                                        matched_scenario_2, cells,
                                                                                        cells_2, shift=index)
         confidence = self.max_score / self.sum_score
@@ -729,25 +776,38 @@ class LineageTrack:
         return cells, confidence, cells_2, confidence_2
 
     def lysis_cells(self):
-        idx_list = range(self.current_number_of_cells)
+        # Todo: tracked cell from previous iter will not be in the list
+        if self.tracked:
+            offset = self.tracked[3][0]
+            frame_idx = self.i
+        else:
+            offset = 0
+            frame_idx = -1
+        idx_list = range(offset, self.current_number_of_cells)
         self.current_lysis = [i + 1 for i in idx_list if i + 1 not in self.next_track]
         for lysis in self.current_lysis:
-            self.all_cells[self.current_trench][-1][lysis - 1].out = True
-            if self.all_cells[self.current_trench][-1][lysis - 1].within_safe_zone:
-                self.all_cells[self.current_trench][-1][lysis - 1].lyse = True
+            self.all_cells[self.current_trench][frame_idx][lysis - 1].out = True
+            if self.all_cells[self.current_trench][frame_idx][lysis - 1].within_safe_zone:
+                self.all_cells[self.current_trench][frame_idx][lysis - 1].lyse = True
 
     def lysis_cells_2(self):
-        idx_list = range(self.current_number_of_cells)
+        # Todo: tracked cell from previous iter will not be in the list
+        if self.tracked:
+            offset = self.tracked[3][0]
+        else:
+            offset = 0
+        idx_list = range(offset, self.current_number_of_cells)
         self.current_lysis_2 = [i + 1 for i in idx_list if i + 1 not in self.next_track_2]
 
     def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer-adder",
                      p_sp=-1, special_reporter=None, show_details=False, ret_df=True, fill_gap=False, adap_dpf=False,
-                     drift=False, skew_model=True, update_from_res=False):
+                     drift=False, skew_model=True, update_para=False, cumulative=True):
         """
         Track cells in specified trench, results are stored in a pandas DataFrame, with a colume that contains
         the labels of the parent cell from previous frame.
+        @param cumulative:
         @param skew_model:
-        @param update_from_res:
+        @param update_para:
         @param drift:
         @param trench: trench_id
         @param threshold: the limit of the centroid y-axis,
@@ -777,6 +837,7 @@ class LineageTrack:
             self.fill_gap = fill_gap
             self.drifting = drift
             self.skew_model = skew_model
+            self.tracked = None
             frames = self.df.loc[self.df["trench_id"] == self.current_trench, "time_(mins)"].copy()
             frames = sorted(list(set(frames)))
             if threshold == -1:
@@ -803,67 +864,131 @@ class LineageTrack:
                 "barcode": [],
                 "poles": []
             }
-            self.all_cells[self.current_trench] = []
+            if self.current_trench not in self.all_cells:
+                self.all_cells[self.current_trench] = []
             number_cells = []
             for i in tqdm(range(len(frames) - 1), desc=f"Tracking over frames in trench {trench}: "):
+                self.i = i
                 self.current_frame = frames[i]
                 self.next_frame = frames[i + 1]
                 self.dt = self.next_frame - self.current_frame
-                self.current_track = self.next_track
-                current_cells = self.load_current_frame()
-                if self.show_details:
-                    print("looking at cells: ")
-                    for x in range(len(current_cells)):
-                        print(current_cells[x])
+                self.current_track = self.tracked_labels + self.next_track
+
+                self.load_current_frame()
                 self.load_next_frame()
                 # points = np.array([cell.set_coordinates(0) for cell in self.buffer_next])
                 if adap_dpf:
                     self.dpf = max_dpf + max(0, len(self.buffer_next) - self.current_number_of_cells)
                 else:
                     self.dpf = max_dpf
-                if self.dpf > self.current_number_of_cells or max_dpf == -1:
-                    self.dpf = self.current_number_of_cells
+                self.tracked_labels = []
+                current_cells_tracked = []
+                buffer_next_tracked = []
+                if cumulative and i + 1 < len(self.all_cells[self.current_trench]):
+                    tracked_cells = []
+                    for n in range(len(self.all_cells[self.current_trench][i])):
+                        if self.all_cells[self.current_trench][i][-n - 1].daughters is not None:
+                            if n == 0:
+                                tracked_cells = self.all_cells[self.current_trench][i][:]
+                            else:
+                                tracked_cells = self.all_cells[self.current_trench][i][:-n]
+                            break
+                    comb_list = [0 if cell.divide is False else 1 for cell in tracked_cells]
+                    if len(tracked_cells) > 1:
+                        truncated = False
+                        drift_current_frame = None
+                        no_current_tracked = 0
+                        drift_next_frame = None
+                        no_next_tracked = 0
+                        for cell in reversed(tracked_cells):
+                            if cell.divide and not isinstance(cell.daughters, tuple):
+                                truncated = True
+                                pass
+                            else:
+                                drift_current_frame = cell.centroid_y + cell.major / 2
+                                no_current_tracked = int(cell.label)
+                                if isinstance(cell.daughters, tuple):
+                                    drift_next_frame = cell.daughters[-1].centroid_y + cell.daughters[-1].major / 2
+                                    no_next_tracked = int(cell.daughters[-1].label)
+                                else:
+                                    drift_next_frame = cell.daughters.centroid_y + cell.daughters.major / 2
+                                    no_next_tracked = int(cell.daughters.label)
+                                self.tracked_labels = [c.parent.label for c in
+                                                       self.all_cells[self.current_trench][i + 1][:no_next_tracked]]
+                                break
+                        # Todo: remove the truncated lineage from the all_cells, remove the fully tracked cells from
+                        #  current and next frame
+                        self.current_cells = self.current_cells[no_current_tracked:]
+                        buffer_next_tracked = self.buffer_next[:no_next_tracked]
+                        self.buffer_next = self.buffer_next[no_next_tracked:]
 
+                        self.tracked = (comb_list[:no_current_tracked],
+                                        (drift_current_frame, drift_next_frame),
+                                        truncated,
+                                        (no_current_tracked, no_next_tracked),
+                                        self.all_cells[self.current_trench][i][:no_current_tracked],
+                                        self.all_cells[self.current_trench][i + 1][:no_next_tracked])
+                        # print(self.tracked)
+                    no_untracked = self.current_number_of_cells - len(tracked_cells)
+                    if self.dpf > no_untracked or max_dpf == -1:
+                        self.dpf = no_untracked
+                else:
+                    if self.dpf > self.current_number_of_cells or max_dpf == -1:
+                        self.dpf = self.current_number_of_cells
+                if self.show_details:
+                    print("looking at cells: ")
+                    for x in range(len(self.current_cells)):
+                        print(self.current_cells[x])
                 if len(self.buffer_next) == 0:
-                    print("STOP EARLY")
-                    if len(current_cells) != 0:
-                        self.store_cells_info(current_cells)
+                    print("NO Cells to track at {}".format(self.current_frame))
                     self.next_track = []
+                    self.next_track_2 = []
+                    if len(self.current_cells) != 0:
+                        cells = copy.deepcopy(self.current_cells)
+                        self.store_cells_info(cells)
+                    confidence = 1
+                    confidence_2 = 0
                     self.lysis_cells()
-                    break
+                    self.lysis_cells_2()
+                else:
+                    cells, confidence, cells_2, confidence_2 = self.score_futures(p_sp=p_sp)
+                    number_cells.append(self.current_number_of_cells)
+                    # print("confidence: {}".format(confidence))
+                    # print(self.sum_score)
+                    # if confidence < 0.5:
+                    #     print("\t second confidence: {}".format(confidence_2))
+                    # print(self.sum_prior)
+                    # print(self.avg_distance)
+                    self.store_cells_info(cells)
+                    # index pointers to the current frame cells from next frame
+                    self.lysis_cells()
+                    self.lysis_cells_2()
 
-                cells, confidence, cells_2, confidence_2 = self.score_futures(current_cells, p_sp=p_sp)
-                number_cells.append(self.current_number_of_cells)
-                # print("confidence: {}".format(confidence))
-                # print(self.sum_score)
-                # if confidence < 0.5:
-                #     print("\t second confidence: {}".format(confidence_2))
-                # print(self.sum_prior)
-                # print(self.avg_distance)
-                self.store_cells_info(cells)
-                # index pointers to the current frame cells from next frame
-                self.lysis_cells()
-                self.lysis_cells_2()
-
+                # Todo: Cell simulations missing tracked
                 if i == 0:
                     data_buffer["track-1"].append([None] * self.current_number_of_cells)
                     data_buffer["confidence-1"].append(None)
                     data_buffer["track-2"].append([None] * self.current_number_of_cells)
                     data_buffer["confidence-2"].append(None)
-                    data_buffer["label"].append([cell.label for cell in current_cells])
                     data_buffer["track_frame"].append(self.current_frame)  # * self.current_number_of_cells)
-                    data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in cells])
+                    data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y)
+                                                 for cell in self.all_cells[self.current_trench][0]])
                 else:
-                    data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][i-1]])
-                    data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][i-1]])
+                    for cell in self.all_cells[self.current_trench][i - 1]:
+                        cell.barcode_to_binary(max_bit=8)
+                    data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][i - 1]])
+                    data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][i - 1]])
 
-                data_buffer["track-1"].append(self.next_track)
+                data_buffer["label"].append([cell.label
+                                             for cell in self.all_cells[self.current_trench][i]])
+                data_buffer["track-1"].append(self.tracked_labels + self.next_track)
                 data_buffer["confidence-1"].append(confidence)
-                data_buffer["track-2"].append(self.next_track_2)
+                data_buffer["track-2"].append(self.tracked_labels + self.next_track_2)
                 data_buffer["confidence-2"].append(confidence_2)
-                data_buffer["label"].append([cell.label for cell in self.buffer_next if self.buffer_next is not None])
+
                 data_buffer["track_frame"].append(self.next_frame)  # * len(self.next_track))
-                data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y) for cell in self.buffer_next
+                data_buffer["coord"].append([(cell.centroid_x, cell.centroid_y)
+                                             for cell in buffer_next_tracked + self.buffer_next
                                              if self.buffer_next is not None])
 
                 data_buffer["lysis-1"].append(self.current_lysis)
@@ -879,29 +1004,45 @@ class LineageTrack:
             barcode_list = []
             poles_list = []
             assert isinstance(self.buffer_next, list)
-            for cell, parent_label in zip(self.buffer_next, self.next_track):
+            if self.tracked:
+                cells_to_add = self.tracked[5]
+            else:
+                cells_to_add = []
+            trench_cells = cells_to_add + self.buffer_next
+            for cell in self.all_cells[self.current_trench][self.i]:
+                cell.daughters = None
+            for cell, parent_label in zip(trench_cells, self.tracked_labels + self.next_track):
                 if parent_label is not None:
                     cell.parent_label = parent_label
-                    cell.set_parent(self.all_cells[self.current_trench][-1][int(parent_label - 1)])
-                    self.all_cells[self.current_trench][-1][int(parent_label - 1)].set_daughters(cell)
-            if len(self.all_cells[self.current_trench][-1]) != 0:
-                for cell in self.all_cells[self.current_trench][-1]:
-                    cell.assign_barcode(to_whom="daughter", max_bit=8)
+                    cell.set_parent(self.all_cells[self.current_trench][self.i][int(parent_label - 1)])
+                    self.all_cells[self.current_trench][self.i][int(parent_label - 1)].set_daughters(cell)
+            if len(self.all_cells[self.current_trench][self.i]) != 0:
+                for cell in self.all_cells[self.current_trench][self.i]:
+                    try:
+                        cell.assign_barcode(to_whom="daughter", max_bit=8)
+                    except TypeError:
+                        print(f"cell {cell.label} at time {cell.time}")
                     cell.barcode_to_binary(max_bit=8)
                     cell.set_generation()
-                data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][-1]])
-                data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][-1]])
-            for cell in self.buffer_next:
+                data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][self.i]])
+                data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][self.i]])
+            for cell in trench_cells:
                 cell.barcode_to_binary(max_bit=8)
                 barcode_list.append(cell.barcode)
                 poles_list.append(cell.poles)
-            self.all_cells[self.current_trench].append(self.buffer_next)
-            data_buffer["barcode"].append(barcode_list)
-            data_buffer["poles"].append(poles_list)
+            # Todo: deal with cumulative
+            if self.tracked:
+                self.all_cells[self.current_trench][self.i + 1] = trench_cells
+            else:
+                self.all_cells[self.current_trench].append(trench_cells)
+            data_buffer["label"].append([cell.label for cell in self.all_cells[self.current_trench][self.i + 1]
+                                         if self.buffer_next is not None])
+            data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][self.i+1]])
+            data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][self.i+1]])
 
             # print(np.mean(number_cells))
 
-            if update_from_res:
+            if update_para:
                 self.update_model_para("lineage-trench")
             if ret_df:
                 trench_track = [data_buffer["trench"]] * len(data_buffer["track_frame"])
@@ -942,13 +1083,14 @@ class LineageTrack:
         for i in range(no_steps - 1):
             thr = int(threshold * (i + 1) / no_steps)
             self.track_trench(trench, thr, max_dpf, search_mode, probability_mode, p_sp, special_reporter, show_details,
-                              False, fill_gap, adap_dpf, drift, skew_model, update_from_res=True)
+                              False, fill_gap, adap_dpf, drift, skew_model, update_para=True, cumulative=True)
             if self.sizer_length_paras[1] == 0 or self.adder_length_paras[1] == 0:
                 self.update_model_para("unif")
             else:
                 probability_mode = "sizer-adder"
         return (self.track_trench(trench, threshold, max_dpf, search_mode, probability_mode, p_sp, special_reporter,
-                                  show_details, False, fill_gap, adap_dpf, drift, skew_model, update_from_res=True),
+                                  show_details, False, fill_gap, adap_dpf, drift, skew_model, update_para=True,
+                                  cumulative=True),
                 self.all_cells)
 
     def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
