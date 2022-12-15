@@ -277,11 +277,14 @@ class Visualiser:
                             # _gray_scale = 250 - (int(_barcode, 2) / max_gray) * 200
                             # _gray_scale = 250 - \
                             #               (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
-                            _color_scale = cmap(flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode))
-                            _color_scale = tuple(int((255 * x)) for x in _color_scale[0:3])
-                            cv.drawContours(_image, _rev_con, contourIdx=C,
-                                            color=_color_scale,
-                                            thickness=-1)
+                            try:
+                                _color_scale = cmap(flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode))
+                                _color_scale = tuple(int((255 * x)) for x in _color_scale[0:3])
+                                cv.drawContours(_image, _rev_con, contourIdx=C,
+                                                color=_color_scale,
+                                                thickness=-1)
+                            except ValueError:
+                                print("unseen barcode")
                             _position = (round(_cells.at[0, "centroid"][C][0]),
                                          round(_cells.at[0, "centroid"][C][1]))
                             cv.putText(_image, "{:08b}".format(int(_cells.at[0, "barcode"][C], 2)),
