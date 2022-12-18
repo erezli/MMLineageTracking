@@ -118,7 +118,7 @@ class Visualiser:
             if mode == "connect_daughter":
                 for i in range(len(times)):
                     time = times[i]
-                    frame = "%04d" % (i * step)
+                    frame = "%04d" % v
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
@@ -159,8 +159,8 @@ class Visualiser:
                 for i in idx:
                     time1 = times[i]
                     time2 = times[i + 1]
-                    frame1 = "%04d" % i
-                    frame2 = "%04d" % (i + 1)
+                    frame1 = "%04d" % (i * step)
+                    frame2 = "%04d" % ((i + 1) * step)
                     cells1 = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                                (self.track_df["time_(mins)"] == time1)].copy()
                     cells1.reset_index(drop=True, inplace=True)
@@ -207,7 +207,7 @@ class Visualiser:
             elif mode == "barcode":
                 for i in range(len(times)):
                     time = times[i]
-                    frame = "%04d" % i
+                    frame = "%04d" % (i * step)
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
@@ -257,7 +257,7 @@ class Visualiser:
 
                 def paint_cells(X):
                     _time = times[X]
-                    _frame = "%04d" % X
+                    _frame = "%04d" % (X * step)
                     _cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                                (self.track_df["time_(mins)"] == _time)].copy()
                     _cells.reset_index(drop=True, inplace=True)
@@ -316,7 +316,7 @@ class Visualiser:
             elif mode == "generation-by-poles":
                 for i in range(len(times)):
                     time = times[i]
-                    frame = "%04d" % i
+                    frame = "%04d" % (i * step)
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)
