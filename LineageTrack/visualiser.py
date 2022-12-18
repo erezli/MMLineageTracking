@@ -88,7 +88,7 @@ class Visualiser:
 
     def label_images(self, image_dir, mode="connect_daughter", save_dir="./temp/labelled_masks/",
                      template=None, template_mode="exp", show_other=True, for_frames=None, colour_scale="Greys",
-                     fluores=False):
+                     fluores=False, step=1):
         """
         # Todo: can have different template for read and write file names
         Generate images that is labelled by specific mode
@@ -118,7 +118,7 @@ class Visualiser:
             if mode == "connect_daughter":
                 for i in range(len(times)):
                     time = times[i]
-                    frame = "%04d" % i
+                    frame = "%04d" % (i * step)
                     cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                               (self.track_df["time_(mins)"] == time)].copy()
                     cells.reset_index(drop=True, inplace=True)

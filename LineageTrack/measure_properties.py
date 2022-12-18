@@ -23,14 +23,14 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited
     :rtype: class: 'dict'
     """
     # read label image
-    label_img = imread(label_img_path)
-    label_img = label_img.astype(bool)
+    label_img = tifffile.imread(label_img_path)
+    # label_img = label_img.astype(bool)
     label_img = remove_small_objects(label_img, min_size=min_size)
     labels = label(label_img, connectivity=1)
     # labels = label_img
 
     # read intensity image
-    intensity_img = tifffile.imread(intensity_img_path)
+    intensity_img = imread(intensity_img_path)
 
     data = regionprops_table(labels, intensity_img, properties=(
         "area", "major_axis_length", "minor_axis_length", "centroid",
@@ -80,10 +80,10 @@ def generate_csv(fov, label_dir, intensity_dir, dt=1, save_dir="./temp/", min_si
             # if int(info[4].split("-")[1]) == 20 and int(info[5].split("-")[1].split(".")[0]) == 99 and info[0] == fov:
             if info[0] == fov:
                 # intensity_image = label_images[i].split("-")[0].replace(info[1], channel) + ".tif"
-                intensity_image = label_images[i].replace(info[1], channel) + ".tif"
+                intensity_image = label_images[i].split(".")[0].replace(info[1], channel) + ".png"
                 # suffix = "-".join(label_images[i].split("-")[1:]).split(".")[0]
                 trench = int(info[2][2:])
-                time = int(info[3][1:-1])
+                time = int(info[3][1:])
                 if time % step == 0:
                     data = get_cell_props(os.path.join(label_dir, label_images[i]),
                                           os.path.join(intensity_dir, intensity_image), min_size=min_size)
