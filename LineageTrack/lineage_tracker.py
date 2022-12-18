@@ -1095,12 +1095,12 @@ class LineageTrack:
 
     def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                    special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False,
-                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True):
+                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200):
         if trenches is None:
             trenches = self.trenches
         results = Parallel(n_jobs=-1, verbose=5)(delayed(self.track_trench_iteratively)
                                                  (t, threshold, max_dpf, search_mode, p_sp, special_reporter,
-                                                  show_details, fill_gap, adap_dpf, drift, skew_model)
+                                                  show_details, fill_gap, adap_dpf, drift, skew_model, thresh_per_iter)
                                                  for t in trenches)
         data_buffer = {
             "trench_track": [],
