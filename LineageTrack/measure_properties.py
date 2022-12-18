@@ -76,7 +76,7 @@ def generate_csv(fov, label_dir, intensity_dir, dt=1, save_dir="./temp/", min_si
     for channel in channels:
         data_list = []
         for i in tqdm(range(len(label_images)), desc=f"reading through images in channel {channel} and FOV {fov}"):
-            info = label_images[i].split("_")
+            info = label_images[i].split(".")[0].split("_")
             # if int(info[4].split("-")[1]) == 20 and int(info[5].split("-")[1].split(".")[0]) == 99 and info[0] == fov:
             if info[0] == fov:
                 # intensity_image = label_images[i].split("-")[0].replace(info[1], channel) + ".tif"
