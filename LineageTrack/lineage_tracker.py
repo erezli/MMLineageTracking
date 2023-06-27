@@ -805,27 +805,26 @@ class LineageTrack:
         """
         Track cells in specified trench, results are stored in a pandas DataFrame, with a colume that contains
         the labels of the parent cell from previous frame.
-        @param cumulative:
-        @param skew_model:
-        @param update_para:
-        @param drift:
+        
         @param trench: trench_id
-        @param threshold: the limit of the centroid y-axis,
-        this is to limit the number of cells to look at in each trench
-        @param max_dpf: is the maximum division per frame to simulate,
+        @param threshold: the limit of the centroid y-axis, this is to limit the number of cells to look at in each trench
+        @param max_dpf: the maximum division per frame to simulate,
         1 or 2 should be enough but in principle this value can go up to the total number of cells below the threshold,
         i.e., all cells divide. If it goes over the total number of cells it will instead use the total number.
-        @param search_mode:  is to select the method used to search the cells' matching future,
+        @param search_mode: to select the method used to search the cells' matching future,
         options are simple nearest neighbour 'KDTree'
         or sequence matching 'SeqMatch' (exclusively one-to-one matching, suggested)
-        @param probability_mode:
+        @param probability_mode: sizer, or a combination of sizer and adder 
         @param p_sp: Probability of all cells entering stationary phase, i.e., stop growing.
-        @param special_reporter:
+        @param special_reporter: e.g. YFP - special channel intensities to keep track
         @param show_details: Display more details about the process
         @param ret_df: If True, output pandas dataframe. If False, output dictionary structure.
         @param fill_gap:
         @param adap_dpf:
-
+        @param drift:
+        @param cumulative:
+        @param skew_model:
+        @param update_para:
         """
         if trench in self.trenches:
             self.current_trench = int(trench)
