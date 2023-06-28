@@ -13,14 +13,14 @@ def get_cell_props(label_img_path, intensity_img_path, min_size=80):    # edited
     Returns the region properties specified in this function for label and intensity image pair.
     Objects smaller than a minimum size are unlikely to be cells and are removed from the analysis.
 
-    :param label_img_path: The full path to the label image file (a binary mask).
-    :type label_img_path: class: 'str'
-    :param intensity_img_path: The full path to the intensity image file you wish measure the properties of.
-    :type intensity_img_path: class: 'str'
-    :param min_size: The minimum size in pixels of a region to be included in the analysis.
-    :type min_size: class: 'int'
-    :return: A dictionary of all the cell properties measured in a given image.
-    :rtype: class: 'dict'
+    @param label_img_path: The full path to the label image file (a binary mask).
+    @type label_img_path: class: 'str'
+    @param intensity_img_path: The full path to the intensity image file you wish measure the properties of.
+    @type intensity_img_path: class: 'str'
+    @param min_size: The minimum size in pixels of a region to be included in the analysis.
+    @type min_size: class: 'int'
+    @return: A dictionary of all the cell properties measured in a given image.
+    @rtype: class: 'dict'
     """
     # read label image
     label_img = tifffile.imread(label_img_path)
