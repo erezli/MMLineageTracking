@@ -62,7 +62,7 @@ def combine_data(data_list):
     return df
 
 
-def generate_csv(fov, label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=50, channels=None, step=1):
+def generate_csv(fov, label_dir, intensity_dir, dt=1, save_dir="./temp/", min_size=50, channels=None, step=1, t_end=None):
     label_images = sorted([f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))])
     # if channels is None:
     #     channels = set()
@@ -81,15 +81,24 @@ def generate_csv(fov, label_dir, intensity_dir, dt=1, save_dir="./temp/", min_si
             if info[0] == fov:
                 # intensity_image = label_images[i].split("-")[0].replace(info[1], channel) + ".tif"
                 intensity_image = label_images[i].split(".")[0].replace(info[1], channel) + ".png"
+                # intensity_image = label_images[i].split(".")[0].replace(info[1], channel) + ".png"
                 # suffix = "-".join(label_images[i].split("-")[1:]).split(".")[0]
                 trench = int(info[2][2:])
-                time = int(info[3][1:])
+                # time = int(info[3][1:])
+                time = int(info[3][:])
                 if time % step == 0:
-                    data = get_cell_props(os.path.join(label_dir, label_images[i]),
-                                          os.path.join(intensity_dir, intensity_image), min_size=min_size)
+                    if not t_end:
+                        data = get_cell_props(os.path.join(label_dir, label_images[i]),
+                                              os.path.join(intensity_dir, intensity_image), min_size=min_size)
 
-                    data = add_information(data, channel=channel, trench_id=trench, time=time*dt, identity=intensity_image)
-                    data_list.append(data)
+                        data = add_information(data, channel=channel, trench_id=trench, time=time*dt, identity=intensity_image)
+                        data_list.append(data)
+                    elif time <= t_end:
+                        data = get_cell_props(os.path.join(label_dir, label_images[i]),
+                                              os.path.join(intensity_dir, intensity_image), min_size=min_size)
+
+                        data = add_information(data, channel=channel, trench_id=trench, time=time*dt, identity=intensity_image)
+                        data_list.append(data)
         df = combine_data(data_list)
         if not os.path.isdir(save_dir):
             os.mkdir(save_dir)

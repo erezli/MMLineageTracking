@@ -198,6 +198,8 @@ class LineageTrack:
             plt.plot(mcell[:, 0], mcell[:, 1])
             plt.plot(peaks[:, 0], peaks[:, 1], "o")
             plt.title(f"trench_id: {trench}, the major axis length of the mother cell")
+            plt.xlabel("time (min)")
+            plt.ylabel("length (px)")
             plt.show()
         mother_cell_info = (trench, mcell)
         return mother_cell_info, idx_p[0]
