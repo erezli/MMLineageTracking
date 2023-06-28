@@ -5,6 +5,7 @@ from skimage.morphology import remove_small_objects, dilation, erosion
 import pandas as pd
 from tqdm import tqdm
 import zarr
+import os
 
 
 def get_cell_props(mask, channel_img, min_size=80):
@@ -34,7 +35,7 @@ def get_cell_props(mask, channel_img, min_size=80):
     # labels = label(filtered, connectivity=1)
     ###
 
-    labels = mask
+    labels = mask.astype(int)
 
     data = regionprops_table(labels, channel_img, properties=(
         "area", "major_axis_length", "minor_axis_length", "centroid",
@@ -105,6 +106,6 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         df = combine_data(data_list)
         if not os.path.isdir(save_dir):
             os.mkdir(save_dir)
-        df.to_csv(os.path.join(save_dir, f"{channel}_properties.csv"))
-        save_loc.append(os.path.join(save_dir, f"{channel}_properties.csv"))
+        df.to_csv(os.path.join(save_dir, f"{n}_properties.csv"))
+        save_loc.append(os.path.join(save_dir, f"{n}_properties.csv"))
     return f"saved to {save_loc}"
