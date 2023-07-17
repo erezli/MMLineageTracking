@@ -57,8 +57,6 @@ class Visualiser:
         @param skip: skip initial frames
         @return:
         """
-        if template is None:
-            template = template_mask
         for t in self.trenches:
             times = self.track_df.loc[self.track_df["trench_id"] == t, "time_(mins)"].copy()
             times = sorted(list(set(times)))
@@ -75,7 +73,7 @@ class Visualiser:
                     cells.reset_index(drop=True, inplace=True)
                     # read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
                     image = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]  # cv.imread(image_dir + os.path.sep + read_path)
-                    image = cv.fromarray(image)
+                    image = np.asarray(image)
                     for c in range(len(cells.at[0, "label"])):
                         position_1 = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
                         cv.drawMarker(image, position_1, (255, 0, 0))
@@ -121,7 +119,7 @@ class Visualiser:
                     cells2.reset_index(drop=True, inplace=True)
 
                     image2 = zarr.open(zarr_dir, mode='r')[t, i + 1, channel, :, :]
-                    image2 = cv.fromarray(image2)
+                    image2 = np.asarray(image2)
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
                     cv.putText(image2, "t={}".format(time2),
@@ -130,6 +128,7 @@ class Visualiser:
                                (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     if i == 0:
                         image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
+                        image1 = np.asarray(image1)
                         if isinstance(fluores, int) and fluores != 0:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
