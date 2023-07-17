@@ -9,33 +9,7 @@ import matplotlib.image as mpimg
 import zarr
 
 
-template_mask = ['xy', '_mCherry_TR', '_T', '.png']
-
-
-def generate_file_name(template, pre=None, fov=None, trench=None, time=None, mode="exp"):
-    """
-    This function should be modified depending on how your images are named
-    @param template:
-    @param pre: prefix
-    @param fov: field of view
-    @param trench: trench_id
-    @param time: frame number
-    @param mode: can have more mode for different way of naming the files, "SyMBac" is for the synthetic data
-    @return: the path to the file of given fov and trench at given time
-    """
-    # e.g., xy000_mCherry_TR1_T0000-_epoch-20_prob-99.png
-    if mode == "exp":
-        path = str(pre) + template[0] + str(fov) + template[1] + \
-               str(int(trench)) + template[2] + str(time) + template[3]
-
-    # for SyMBac data - testing purpose #
-    elif mode == "SyMBac":
-        path = template[0] + str(time) + ".tif"
-    else:
-        path = ""
-    return path
-
-
+# load from dataframes, visualise using label_images(zarr_dir, channel, mode="landscape-line", save_dir="./temp/")
 class Visualiser:
     def __init__(self, track_df, lysis_df, cells=None):
         track_df.sort_values(["trench_id", "time_(mins)"], inplace=True)
@@ -64,45 +38,23 @@ class Visualiser:
         df_l = pd.read_csv(filepath_l, converters={"label": ast.literal_eval})
         return cls(df_t, df_l)
 
-    def get_labelled_image(self, read_dir, frames, trench, pre="barcoded_", template=None, template_mode="exp"):
-        """
-        display the labelled images of selected frames and trench
-        @param read_dir: the directory of these labelled images
-        @param frames: a list of frame index (NOT the time in minutes)
-        @param trench: the trench_id
-        @param pre: can be "barcoded_", "poles_", or "connected_"
-        @param template: will be passed on to generate_file_name
-        @param template_mode: will be passed on to generate_file_name
-        @return:
-        """
-        if template is None:
-            template = template_mask
-        fig, ax = plt.subplots(1, len(frames), figsize=(100, 100))
-        ax_flat = ax.flatten()
-        for i in range(len(frames)):
-            frame = "%04d" % frames[i]
-            path = generate_file_name(template, pre, self.FOV, trench, frame, mode=template_mode)
-            img = mpimg.imread(read_dir + path)
-            ax_flat[i].imshow(img)
-            ax_flat[i].set_ylim(300)
-
-    def label_images(self, image_dir, zarr_dir, channel, mode="connect_daughter", save_dir="./temp/labelled_masks/",
+    def label_images(self, zarr_dir, channel, mode="connect_daughter", save_dir="./temp/labelled_masks/",
                      show_other=True, for_frames=None, colour_scale="Greys", fluores=False, step=1, skip=0):
         """
-        # Todo: can have different template for read and write file names
         Generate images that is labelled by specific mode
-        @param fluores:
-        @param image_dir: directory of the images to label
-        @param mode: connect_daughter; landscape-line; barcode; landscape-colour-scale; generation-by-poles
+        @param zarr_dir: directory of the images to label
+        @param channel: index for the channel you want to visualise
+        @param mode: connect_daughter; landscape-line
         @param save_dir: directory to save the labelled images
-        @param template: will be passed on to generate_file_name
-        @param template_mode: will be passed on to generate_file_name
-        @param show_other: whether to show the un-tracked cells or not
+        @param show_other: whether to show the un-tracked cells or not (in barcode mode)
         @param for_frames: in some landscape mode, can set this to a 2 element tuple
         to specify the range of frames to label
         @param colour_scale: 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
         'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
         'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn'
+        @param fluores: integer to scale the intensity of fluorescence images
+        @param step: time step in going through the images
+        @param skip: skip initial frames
         @return:
         """
         if template is None:
@@ -353,54 +305,54 @@ class Visualiser:
             cv.imwrite(save_dir + os.path.sep + write_path, landscape)
             print(f"saved as {save_dir + os.path.sep + write_path}")
 
-    def show_second_classification(self, trench, frame, image_dir, save_dir=False, template=None,
-                                   template_mode="exp", fluores=False):
+    # def show_second_classification(self, trench, frame, image_dir, save_dir=False, template=None,
+    #                                template_mode="exp", fluores=False):
 
-        if template is None:
-            template = template_mask
-        times = self.track_df.loc[self.track_df["trench_id"] == trench, "time_(mins)"].copy()
-        times = sorted(list(set(times)))
-        offset = 0
-        time1 = times[frame - 1]
-        time2 = times[frame]
-        frame1 = "%04d" % (frame - 1)
-        frame2 = "%04d" % frame
-        cells1 = self.track_df.loc[(self.track_df["trench_id"] == trench) &
-                                   (self.track_df["time_(mins)"] == time1)].copy()
-        cells1.reset_index(drop=True, inplace=True)
-        cells2 = self.track_df.loc[(self.track_df["trench_id"] == trench) &
-                                   (self.track_df["time_(mins)"] == time2)].copy()
-        cells2.reset_index(drop=True, inplace=True)
+    #     if template is None:
+    #         template = template_mask
+    #     times = self.track_df.loc[self.track_df["trench_id"] == trench, "time_(mins)"].copy()
+    #     times = sorted(list(set(times)))
+    #     offset = 0
+    #     time1 = times[frame - 1]
+    #     time2 = times[frame]
+    #     frame1 = "%04d" % (frame - 1)
+    #     frame2 = "%04d" % frame
+    #     cells1 = self.track_df.loc[(self.track_df["trench_id"] == trench) &
+    #                                (self.track_df["time_(mins)"] == time1)].copy()
+    #     cells1.reset_index(drop=True, inplace=True)
+    #     cells2 = self.track_df.loc[(self.track_df["trench_id"] == trench) &
+    #                                (self.track_df["time_(mins)"] == time2)].copy()
+    #     cells2.reset_index(drop=True, inplace=True)
 
-        path2 = generate_file_name(template, "", self.FOV, trench, frame2, mode=template_mode)
-        image2 = cv.imread(image_dir + os.path.sep + path2)
-        if isinstance(fluores, int) and fluores != 0:
-            image2 *= fluores
-        cv.putText(image2, "t={}".format(time2),
-                   (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-        cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-2"] * 100),
-                   (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-        path1 = generate_file_name(template, "", self.FOV, trench, frame1, mode=template_mode)
-        image1 = cv.imread(image_dir + os.path.sep + path1)
-        if isinstance(fluores, int) and fluores != 0:
-            image1 *= fluores
-        self.image_width = image1.shape[1]
-        cv.putText(image1, "t={}".format(time1),
-                   (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
-        landscape = np.concatenate((image1, image2), axis=1)
-        for c in range(len(cells2.at[0, "label"])):
-            if cells2.at[0, "parent_label-2"][c] is not None:
-                parent = int(cells2.at[0, "parent_label-2"][c]) - 1
-                position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
-                             round(cells2.at[0, "centroid"][c][1]))
-                position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
-                             round(cells1.at[0, "centroid"][parent][1]))
-                cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
-        plt.figure(figsize=(5, 20))
-        plt.imshow(landscape)
-        if save_dir:
-            write_path = generate_file_name(template, "second_classification_", self.FOV, trench, "", mode=template_mode)
-            if not os.path.isdir(save_dir):
-                os.mkdir(save_dir)
-            cv.imwrite(save_dir + os.path.sep + write_path, landscape)
-            print(f"saved as {save_dir + os.path.sep + write_path}")
+    #     path2 = generate_file_name(template, "", self.FOV, trench, frame2, mode=template_mode)
+    #     image2 = cv.imread(image_dir + os.path.sep + path2)
+    #     if isinstance(fluores, int) and fluores != 0:
+    #         image2 *= fluores
+    #     cv.putText(image2, "t={}".format(time2),
+    #                (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+    #     cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-2"] * 100),
+    #                (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+    #     path1 = generate_file_name(template, "", self.FOV, trench, frame1, mode=template_mode)
+    #     image1 = cv.imread(image_dir + os.path.sep + path1)
+    #     if isinstance(fluores, int) and fluores != 0:
+    #         image1 *= fluores
+    #     self.image_width = image1.shape[1]
+    #     cv.putText(image1, "t={}".format(time1),
+    #                (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+    #     landscape = np.concatenate((image1, image2), axis=1)
+    #     for c in range(len(cells2.at[0, "label"])):
+    #         if cells2.at[0, "parent_label-2"][c] is not None:
+    #             parent = int(cells2.at[0, "parent_label-2"][c]) - 1
+    #             position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
+    #                          round(cells2.at[0, "centroid"][c][1]))
+    #             position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
+    #                          round(cells1.at[0, "centroid"][parent][1]))
+    #             cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
+    #     plt.figure(figsize=(5, 20))
+    #     plt.imshow(landscape)
+    #     if save_dir:
+    #         write_path = generate_file_name(template, "second_classification_", self.FOV, trench, "", mode=template_mode)
+    #         if not os.path.isdir(save_dir):
+    #             os.mkdir(save_dir)
+    #         cv.imwrite(save_dir + os.path.sep + write_path, landscape)
+    #         print(f"saved as {save_dir + os.path.sep + write_path}")
