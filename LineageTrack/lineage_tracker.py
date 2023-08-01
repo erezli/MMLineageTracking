@@ -622,7 +622,7 @@ class LineageTrack:
                 try:
                     cell.assign_barcode(to_whom="daughter", max_bit=8)
                 except TypeError:
-                    print(f"cell {cell.label} at time {cell.time}")
+                    print(f"cell {cell.label} at time {cell.time} failed assigning barcode (could have been converted already)")
                 cell.barcode_to_binary(max_bit=8)
                 cell.set_generation()
         else:
@@ -635,7 +635,8 @@ class LineageTrack:
             for cell_next, parent_label in zip(self.buffer_next, self.next_track):
                 if parent_label is not None:
                     cell_next.set_parent(trench_cells[int(parent_label) - 1])
-        if self.tracked:
+        # if self.tracked:
+        if len(self.all_cells[self.current_trench]) > self.i: # a bit hacky, ideally want to check if this frame is tracked. Be careful when there is only one cell
             self.all_cells[self.current_trench][self.i] = trench_cells
         else:
             self.all_cells[self.current_trench].append(trench_cells)
@@ -779,8 +780,12 @@ class LineageTrack:
 
     def lysis_cells(self):
         # Todo: tracked cell from previous iter will not be in the list
-        if self.tracked:
-            offset = self.tracked[3][0]
+        # if self.tracked:
+        if len(self.all_cells[self.current_trench]) > self.i: # a bit hacky, ideally want to check if this frame is tracked. Be careful when there is only one cell:
+            try:
+                offset = self.tracked[3][0]
+            except:
+                offset = 0
             frame_idx = self.i
         else:
             offset = 0
@@ -794,8 +799,12 @@ class LineageTrack:
 
     def lysis_cells_2(self):
         # Todo: tracked cell from previous iter will not be in the list
-        if self.tracked:
-            offset = self.tracked[3][0]
+        # if self.tracked:
+        if len(self.all_cells[self.current_trench]) > self.i: # a bit hacky, ideally want to check if this frame is tracked. Be careful when there is only one cell:
+            try:
+                offset = self.tracked[3][0]
+            except:
+                offset = 0
         else:
             offset = 0
         idx_list = range(offset, self.current_number_of_cells)
@@ -865,7 +874,7 @@ class LineageTrack:
                 "barcode": [],
                 "poles": []
             }
-            if self.current_trench not in self.all_cells:
+            if self.current_trench not in self.all_cells or cumulative == False:
                 self.all_cells[self.current_trench] = []
             number_cells = []
             for i in tqdm(range(len(frames) - 1), desc=f"Tracking over frames in trench {trench}: "):
@@ -930,7 +939,9 @@ class LineageTrack:
                                         self.all_cells[self.current_trench][i][:no_current_tracked],
                                         self.all_cells[self.current_trench][i + 1][:no_next_tracked])
                         # print(self.tracked)
-                    no_untracked = self.current_number_of_cells - len(tracked_cells)
+                    else:
+                        self.tracked = None
+                    no_untracked = self.current_number_of_cells - max(len(tracked_cells)-1, 0)
                     if self.dpf > no_untracked or max_dpf == -1:
                         self.dpf = no_untracked
                 else:
@@ -944,9 +955,9 @@ class LineageTrack:
                     print("NO Cells to track at {}".format(self.current_frame))
                     self.next_track = []
                     self.next_track_2 = []
-                    if len(self.current_cells) != 0:
-                        cells = copy.deepcopy(self.current_cells)
-                        self.store_cells_info(cells)
+                    # if len(self.current_cells) != 0:
+                    cells = copy.deepcopy(self.current_cells)
+                    self.store_cells_info(cells)
                     confidence = 1
                     confidence_2 = 0
                     self.lysis_cells()
@@ -1025,8 +1036,8 @@ class LineageTrack:
                         print(f"cell {cell.label} at time {cell.time}")
                     cell.barcode_to_binary(max_bit=8)
                     cell.set_generation()
-                data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][self.i]])
-                data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][self.i]])
+            data_buffer["barcode"].append([cell.barcode for cell in self.all_cells[self.current_trench][self.i]])
+            data_buffer["poles"].append([cell.poles for cell in self.all_cells[self.current_trench][self.i]])
             for cell in trench_cells:
                 cell.barcode_to_binary(max_bit=8)
                 barcode_list.append(cell.barcode)
