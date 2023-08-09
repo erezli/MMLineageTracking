@@ -119,7 +119,8 @@ class Visualiser:
                     cells2.reset_index(drop=True, inplace=True)
 
                     image2 = zarr.open(zarr_dir, mode='r')[t, i + 1, channel, :, :]
-                    image2 = np.asarray(image2)
+                    # image2 = np.asarray(image2)
+                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB)
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
                     cv.putText(image2, "t={}".format(time2),
@@ -128,7 +129,8 @@ class Visualiser:
                                (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
                     if i == 0:
                         image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
-                        image1 = np.asarray(image1)
+                        # image1 = np.asarray(image1)
+                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB)
                         if isinstance(fluores, int) and fluores != 0:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
@@ -148,7 +150,7 @@ class Visualiser:
                                          round(cells1.at[0, "centroid"][parent][1]))
                             cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
                     offset += image1.shape[1]
-                write_path = "landscape_line_TR{}_C{}".format(t, channel)
+                write_path = "landscape_line_TR{}_C{}.png".format(t, channel)
                 if not os.path.isdir(save_dir):
                     os.mkdir(save_dir)
                 cv.imwrite(save_dir + os.path.sep + write_path, landscape)
