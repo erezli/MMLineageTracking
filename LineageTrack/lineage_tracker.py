@@ -885,6 +885,11 @@ class LineageTrack:
                 self.current_track = self.tracked_labels + self.next_track
 
                 self.load_current_frame()
+                if self.show_details:
+                    print("cells before cumulative check: ")
+                    print(self.current_cells)
+                    for x in range(len(self.current_cells)):
+                        print(self.current_cells[x])
                 self.load_next_frame()
                 # points = np.array([cell.set_coordinates(0) for cell in self.buffer_next])
                 if adap_dpf:
@@ -914,6 +919,8 @@ class LineageTrack:
                             if cell.divide and not isinstance(cell.daughters, tuple):
                                 truncated = True
                                 pass
+                            elif cell.daughters is None:
+                                pass
                             else:
                                 drift_current_frame = cell.centroid_y + cell.major / 2
                                 no_current_tracked = int(cell.label)
@@ -941,7 +948,8 @@ class LineageTrack:
                         # print(self.tracked)
                     else:
                         self.tracked = None
-                    no_untracked = self.current_number_of_cells - max(len(tracked_cells)-1, 0)
+                    # no_untracked = self.current_number_of_cells - max(len(tracked_cells)-1, 0)
+                    no_untracked = len(self.current_cells)
                     if self.dpf > no_untracked or max_dpf == -1:
                         self.dpf = no_untracked
                 else:
