@@ -6,6 +6,9 @@ import pandas as pd
 from tqdm import tqdm
 import zarr
 import os
+from ast import literal_eval
+import mahotas
+# import cv2 as cv
 
 
 def get_cell_props(mask, channel_img, min_size=80):
@@ -47,13 +50,30 @@ def get_cell_props(mask, channel_img, min_size=80):
     return data
 
 
-def add_information(data, channel, trench_id, time, identity):
+def extract_from_string(array): # for use when reading image intensity array from csv file (it will be string)
+    return np.asarray(literal_eval(array.replace( '[   ' , '[' ).replace( '[  ' , '[' )
+                                   .replace( '    ' , ',' ).replace( '   ' , ',' )
+                                   .replace( '  ' , ',' ).replace( ' ' , ',' )), dtype=np.float32)
+
+
+def add_information(data, channel, trench_id, time, identity, descriptor, radius):
     length = len(data["area"])
     data["label"] = [int(i + 1) for i in range(length)]
     data["channel"] = [channel] * length
     data["trench_id"] = [trench_id] * length
     data["time_(mins)"] = [time] * length
     data["identity"] = [identity] * length
+    if descriptor:
+        # image_list = [extract_from_string(im) for im in data["image_intensity"]]
+        image_list = [im for im in data["image_intensity"]]
+        data["haralick"] = [mahotas.features.haralick(im) for im in image_list]
+        data["haralick_half"] = [(mahotas.features.haralick(im[:int(im.shape[0]/2), :]),
+                                  mahotas.features.haralick(im[int(im.shape[0]/2):, :])) for im in image_list]
+        # make sure radius covers the whole array
+        data["zernike"] = [mahotas.features.zernike_moments(im.astype(bool), radius) for im in image_list]
+        data["zernike_half"] = [(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :], radius),
+                                 mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))
+                                for im in image_list]
     return data
 
 
@@ -68,7 +88,7 @@ def combine_data(data_list):
 
 
 def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0, 
-                 channels=[0], c_names=[None], step=1):
+                 channels=[0], c_names=[None], step=1, descriptor=False, radius=None):
     """
     Generate cell properties in CSV files for each channel, using the zarr array of channel images and masks.
 
@@ -80,6 +100,8 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
     @param channels: List of indices to the channel you want to extract
     @param c_names: List of the corresponding channel names
     @param step: The step to take when looping through images over time (for downsampling purposes)
+    @param descriptor: Specify whether to extract descriptor information or not (Zernike and Haralick)
+    @param radius: radius input for Zernike polynomial
     """
     save_loc = []
     z1 = zarr.open(mask_path, mode='r')
@@ -89,7 +111,7 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         for i in tqdm(range(z1.shape[0]), 
                       desc=f"reading through images in channel {n}..."):
             for j in range(z1.shape[1]):
-                mask_image = z1[i, j, :, :]
+                mask_image = z1[i, j, c, :, :]
                 intensity_image = z2[i, j, c, :, :]
                 trench = i
                 time = j
@@ -101,7 +123,9 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
                                            channel=n,
                                            trench_id=trench,
                                            time=time*dt,
-                                           identity=None)   # from json file
+                                           identity=None,
+                                           descriptor=descriptor,
+                                           radius=radius)   # from json file
                     data_list.append(data)
         df = combine_data(data_list)
         if not os.path.isdir(save_dir):
