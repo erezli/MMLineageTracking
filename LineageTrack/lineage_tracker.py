@@ -39,6 +39,9 @@ class LineageTrack:
             # might include later but takes a lot of memory
             # self.df.insert(len(self.df.columns),"{}_image_intensity".format(channel), d.loc[:, "image_intensity"])
             # self.df.insert(len(self.df.columns), "{}_identity".format(channel), d.loc[:, "identity"])
+            if channel == 'PC':
+                self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])
+                self.df.insert(self.df.shape[1], "zernike_half", d.loc[:, "zernike_half"])
         self.channels = sorted(list(set(self.channels)))
         self.properties = sorted(list(set(self.df.columns)))
         self.df.sort_values(["trench_id", "time_(mins)", "label"], inplace=True)
@@ -114,14 +117,14 @@ class LineageTrack:
         print("Looking for data at these locations:")
         for f in files:
             print(f)
-        cols = list(pd.read_csv(files[0], nrows=1))
+        cols_list = [list(pd.read_csv(f, nrows=1)) for f in files]
         columns_to_skip = list(["image_intensity", "centroid_local-0", "centroid_local-1"])
         df_list = [pd.read_csv(f, usecols=[i for i in cols if i not in columns_to_skip],
                                dtype={"major_axis_length": np.float32, "minor_axis_length": np.float32,
                                       "centroid-0": np.float32, "centroid-1": np.float32,
                                       "orientation": np.float32, "intensity_mean": np.float32})
                    # converters={"image_intensity": reconstruct_array_from_str})
-                   for f in files]
+                   for f, cols in zip(files, cols_list)]
         return cls(df_list=df_list, files=files)
 
     def __str__(self):
@@ -177,7 +180,7 @@ class LineageTrack:
                     plt.show()
                 return mother_cell
 
-    def find_division(self, trench, threshold=1, distance=3, plot=True):
+    def find_division(self, trench, threshold=1, distance=3, height=70, prominence=20, plot=True):
         """
         find and label the division by searching for peaks in the length-time plot, may need user to slice out the bad
         results
@@ -190,7 +193,7 @@ class LineageTrack:
         is a 1D array for index of the peaks
         """
         mcell = self.get_mother_cell_growth(trench)
-        idx_p = find_peaks(mcell[:, 1], threshold=threshold, distance=distance)
+        idx_p = find_peaks(mcell[:, 1], threshold=threshold, distance=distance, height=height, prominence=prominence)
         peaks = [mcell[p, :] for p in idx_p[0]]
         peaks = np.array(peaks)
         if plot:
@@ -960,10 +963,18 @@ class LineageTrack:
                     for x in range(len(self.current_cells)):
                         print(self.current_cells[x])
                 if len(self.buffer_next) == 0:
-                    print("NO Cells to track at {}".format(self.current_frame))
+                    print("NO cells to track at {}".format(self.current_frame))
                     self.next_track = []
                     self.next_track_2 = []
                     # if len(self.current_cells) != 0:
+                    cells = copy.deepcopy(self.current_cells)
+                    self.store_cells_info(cells)
+                    confidence = 1
+                    confidence_2 = 0
+                    self.lysis_cells()
+                    self.lysis_cells_2()
+                elif len(self.current_cells) == 0:
+                    print("NO cells presents at {}".format(self.current_frame))
                     cells = copy.deepcopy(self.current_cells)
                     self.store_cells_info(cells)
                     confidence = 1
