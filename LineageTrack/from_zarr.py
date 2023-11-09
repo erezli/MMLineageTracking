@@ -71,7 +71,12 @@ def add_information(data, channel, trench_id, time, identity, descriptor, radius
         #                           mahotas.features.haralick(im[int(im.shape[0]/2):, :])) for im in image_list]
         # make sure radius covers the whole array
         data["zernike"] = [list(mahotas.features.zernike_moments(im.astype(bool), radius)) for im in image_list]
+<<<<<<< HEAD
         data["zernike_half"] = [[list(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :]), radius), list(mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))]
+=======
+        data["zernike_half"] = [[list(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :], radius)),
+                                 list(mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))]
+>>>>>>> 34ca32a7e515b2404d569454ea1a4c04d6d9f49b
                                 for im in image_list]
     return data
 
