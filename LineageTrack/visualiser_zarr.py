@@ -7,6 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import zarr
+from tqdm import tqdm
 
 
 # load from dataframes, visualise using label_images(zarr_dir, channel, mode="landscape-line", save_dir="./temp/")
@@ -106,7 +107,7 @@ class Visualiser:
                     idx = range(for_frames[0], for_frames[1])
                 else:
                     idx = range(len(times) - 1)
-                for i in idx:
+                for i in tqdm(idx, desc=f"trench {t}"):
                     time1 = times[i]
                     time2 = times[i + 1]
                     frame1 = "%04d" % ((i * step) + skip)
