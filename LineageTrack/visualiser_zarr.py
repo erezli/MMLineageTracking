@@ -7,6 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import zarr
+from tqdm import tqdm
 
 
 # load from dataframes, visualise using label_images(zarr_dir, channel, mode="landscape-line", save_dir="./temp/")
@@ -106,7 +107,7 @@ class Visualiser:
                     idx = range(for_frames[0], for_frames[1])
                 else:
                     idx = range(len(times) - 1)
-                for i in idx:
+                for i in tqdm(idx, desc=f"trench {t}"):
                     time1 = times[i]
                     time2 = times[i + 1]
                     frame1 = "%04d" % ((i * step) + skip)
@@ -120,7 +121,7 @@ class Visualiser:
 
                     image2 = zarr.open(zarr_dir, mode='r')[t, i + 1, channel, :, :]
                     # image2 = np.asarray(image2)
-                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB)
+                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB) # comment out if labelled masks
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
                     cv.putText(image2, "t={}".format(time2),
@@ -130,7 +131,7 @@ class Visualiser:
                     if i == 0:
                         image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
                         # image1 = np.asarray(image1)
-                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB)
+                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB) # comment out if labelled masks
                         if isinstance(fluores, int) and fluores != 0:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
@@ -148,7 +149,7 @@ class Visualiser:
                                          round(cells2.at[0, "centroid"][c][1]))
                             position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
                                          round(cells1.at[0, "centroid"][parent][1]))
-                            cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
+                            cv.line(landscape, position1, position2, color=(0, 0, 0), thickness=2)
                     offset += image1.shape[1]
                 write_path = "landscape_line_TR{}_C{}.png".format(t, channel)
                 if not os.path.isdir(save_dir):
@@ -299,7 +300,7 @@ class Visualiser:
                     pt2 = (round(line.positions[i+1][0] +
                                  (line.resident_time[i+1] - self.times[0]) / dt * self.image_width),
                            round(line.positions[i+1][1]))
-                    cv.line(landscape, pt1, pt2, (255, 0, 0), thickness=3)
+                    cv.line(landscape, pt1, pt2, (0, 0, 255), thickness=3)
             write_path = "highlighted_" + os.path.split(image_path)[1]
             if not os.path.isdir(save_dir):
                 os.mkdir(save_dir)

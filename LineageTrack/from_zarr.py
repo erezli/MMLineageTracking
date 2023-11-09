@@ -63,16 +63,15 @@ def add_information(data, channel, trench_id, time, identity, descriptor, radius
     data["trench_id"] = [trench_id] * length
     data["time_(mins)"] = [time] * length
     data["identity"] = [identity] * length
-    if descriptor:
+    if descriptor and channel == 'PC':
         # image_list = [extract_from_string(im) for im in data["image_intensity"]]
         image_list = [im for im in data["image_intensity"]]
-        data["haralick"] = [mahotas.features.haralick(im) for im in image_list]
-        data["haralick_half"] = [(mahotas.features.haralick(im[:int(im.shape[0]/2), :]),
-                                  mahotas.features.haralick(im[int(im.shape[0]/2):, :])) for im in image_list]
+        # data["haralick"] = [mahotas.features.haralick(im) for im in image_list]
+        # data["haralick_half"] = [(mahotas.features.haralick(im[:int(im.shape[0]/2), :]),
+        #                           mahotas.features.haralick(im[int(im.shape[0]/2):, :])) for im in image_list]
         # make sure radius covers the whole array
-        data["zernike"] = [mahotas.features.zernike_moments(im.astype(bool), radius) for im in image_list]
-        data["zernike_half"] = [(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :], radius),
-                                 mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))
+        data["zernike"] = [list(mahotas.features.zernike_moments(im.astype(bool), radius)) for im in image_list]
+        data["zernike_half"] = [[list(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :]), radius), list(mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))]
                                 for im in image_list]
     return data
 
@@ -111,7 +110,7 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         for i in tqdm(range(z1.shape[0]), 
                       desc=f"reading through images in channel {n}..."):
             for j in range(z1.shape[1]):
-                mask_image = z1[i, j, c, :, :]
+                mask_image = z1[i, j, 0, :, :]
                 intensity_image = z2[i, j, c, :, :]
                 trench = i
                 time = j

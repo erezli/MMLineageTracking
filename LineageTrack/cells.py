@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+import ast
 
 
 class Cell:
@@ -15,6 +16,8 @@ class Cell:
         # self.local_centroid_y = properties["centroid_local-0"]
         # self.local_centroid_x = properties["centroid_local-1"]
         self.orientation = properties["orientation"]
+        # self.zernike = ast.literal_eval(properties["zernike"].replace(' ', ',').replace('\n', ''))
+        # self.zernike_half = ast.literal_eval(properties["zernike_half"].replace('(array(', '[').replace('))', ']').replace(')', '').replace('array(', ''))
         self.channel_intensities = {}
         for c in channels:
             self.channel_intensities[c] = properties["{}_intensity_mean".format(c)]
