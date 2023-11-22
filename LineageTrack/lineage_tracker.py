@@ -429,7 +429,7 @@ class LineageTrack:
         else:
             return self.pr_div_sizer(n, length)
 
-    def cells_simulator(self, cells_list, p_sp):
+    def cells_simulator(self, cells_list, p_sp, radius=0):
         growth = self.calculate_growth()
 
         # if self.probability_mode == "sizer-adder" and self.current_frame > self.div_interval / 2:
@@ -469,7 +469,7 @@ class LineageTrack:
                     com_whole = com
                     len_tracked = 0
                 for i in range(self.current_number_of_cells - len_tracked):
-                    cells_list[i].set_coordinates(division=com[i], growth=growth, offset=offset)
+                    cells_list[i].set_coordinates(division=com[i], growth=growth, offset=offset, radius=radius)
                     if cells_list[i].coord[-1][1] < self.threshold * 0.9:
                         cells_list[i].within_safe_zone = True
                     if self.probability_mode == "sizer-adder" and self.current_frame > self.div_interval / 2:
@@ -498,7 +498,7 @@ class LineageTrack:
         # these cells_futures is a list of tuples (probability, cells) and cells is a list of object Cell
         # return cells_futures, cells_states
 
-    def load_current_frame(self):
+    def load_current_frame(self, radius=0):
         if self.buffer_next:
             if self.tracked:
                 cells_to_add = self.tracked[5]
@@ -520,11 +520,11 @@ class LineageTrack:
             else:
                 cells_list = [Cell(row, self.channels) for index, row in current_local_data.iterrows()]
             for i in range(len(cells_list)):
-                cells_list[i].set_coordinates()
+                cells_list[i].set_coordinates(radius=radius)
         self.current_number_of_cells = len(cells_list)
         self.current_cells = cells_list
 
-    def load_next_frame(self):
+    def load_next_frame(self, radius=0):
         next_local_data = self.df.loc[(self.df["trench_id"] == self.current_trench)
                                       & (self.df["time_(mins)"] == self.next_frame)
                                       & (self.df["centroid-0"] < self.threshold)].copy()
@@ -533,7 +533,7 @@ class LineageTrack:
         else:
             cells_list = [Cell(row, self.channels) for index, row in next_local_data.iterrows()]
         for i in range(len(cells_list)):
-            cells_list[i].set_coordinates()
+            cells_list[i].set_coordinates(radius=radius)
         self.buffer_next = cells_list
         # return cells_list
 
@@ -644,10 +644,10 @@ class LineageTrack:
         else:
             self.all_cells[self.current_trench].append(trench_cells)
 
-    def calc_score(self, cells_list, p_sp, true_coord, matched_scenario, matched_scenario_2, cells, cells_2, shift=0):
+    def calc_score(self, cells_list, p_sp, true_coord, matched_scenario, matched_scenario_2, cells, cells_2, shift=0, radius=0):
         # Todo: using index will be wrong for cases tracked cells are removed
         # for i in range(len(predicted_future)):
-        for predicted_future, predicted_state in self.cells_simulator(cells_list, p_sp=p_sp):
+        for predicted_future, predicted_state in self.cells_simulator(cells_list, p_sp=p_sp, radius=radius):
             pr = predicted_future[0]
             points = []
             cells_arrangement = []
@@ -663,7 +663,7 @@ class LineageTrack:
             for cell in predicted_future[1]:
                 for c in cell.coord:
                     cells_arrangement.append(cell)
-                    points.append([c[0], (c[1] - drift), c[2]])
+                    points.append([c[0], (c[1] - drift), c[2], c[3]])
             points = np.array(points)
             distance, idx = self.nearest_neighbour(points, true_coord)
             # score = pr / np.sum(distance)
@@ -728,7 +728,7 @@ class LineageTrack:
                 # print("\n")
         return (matched_scenario, matched_scenario_2), (cells, cells_2)
 
-    def score_futures(self, p_sp=0):
+    def score_futures(self, p_sp=0, radius=0):
         # current_points = normalize(current_points, axis=0)
         # current_points[:, 4] = current_points[:, 4] * 20     # add weighting to the centroid_y
         # current_points[:, 0] = current_points[:, 0] * 5      # add weighting to the area
@@ -745,7 +745,7 @@ class LineageTrack:
         else:
             drift = self.buffer_next[0].coord[0][1]
         for cell in self.buffer_next:
-            true_coord.append([cell.coord[0][0], (cell.coord[0][1] - drift), cell.coord[0][2]])
+            true_coord.append([cell.coord[0][0], (cell.coord[0][1] - drift), cell.coord[0][2], cell.coord[0][3]])
         true_coord = np.array(true_coord)
         self.max_score = 0
         self.sec_score = 0
@@ -754,7 +754,7 @@ class LineageTrack:
         self.avg_distance = 0
         (matched_scenario, matched_scenario_2), (cells, cells_2) = self.calc_score(self.current_cells, p_sp, true_coord,
                                                                                    matched_scenario, matched_scenario_2,
-                                                                                   cells, cells_2, shift=0)
+                                                                                   cells, cells_2, shift=0, radius=radius)
         # Todo: Dont do this if eliminated tracked
         if abs(self.buffer_next[0].coord[0][1] - mcell_current[0][1]) >= \
                 ((mcell_current[0][0] + self.buffer_next[0].coord[0][0]) * 0.375) and not self.tracked:
@@ -767,7 +767,7 @@ class LineageTrack:
             (matched_scenario, matched_scenario_2), (cells, cells_2) = self.calc_score(self.current_cells, p_sp,
                                                                                        true_coord, matched_scenario,
                                                                                        matched_scenario_2, cells,
-                                                                                       cells_2, shift=index)
+                                                                                       cells_2, shift=index, radius=radius)
         confidence = self.max_score / self.sum_score
         confidence_2 = self.sec_score / self.sum_score
         if self.show_details:
@@ -815,7 +815,7 @@ class LineageTrack:
 
     def track_trench(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", probability_mode="sizer-adder",
                      p_sp=-1, special_reporter=None, show_details=False, ret_df=True, fill_gap=False, adap_dpf=False,
-                     drift=False, skew_model=True, update_para=False, cumulative=True):
+                     drift=False, skew_model=True, update_para=False, cumulative=True, radius=0):
         """
         Track cells in specified trench, results are stored in a pandas DataFrame, with a colume that contains
         the labels of the parent cell from previous frame.
@@ -982,7 +982,7 @@ class LineageTrack:
                     self.lysis_cells()
                     self.lysis_cells_2()
                 else:
-                    cells, confidence, cells_2, confidence_2 = self.score_futures(p_sp=p_sp)
+                    cells, confidence, cells_2, confidence_2 = self.score_futures(p_sp=p_sp, radius=radius)
                     number_cells.append(self.current_number_of_cells)
                     # print("confidence: {}".format(confidence))
                     # print(self.sum_score)
@@ -1105,7 +1105,7 @@ class LineageTrack:
 
     def track_trench_iteratively(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                  special_reporter=None, show_details=False, fill_gap=False,
-                                 adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200):
+                                 adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200, radius=0):
         if threshold == -1:
             threshold = self.max_y
         no_steps = round(threshold / thresh_per_iter)
@@ -1114,24 +1114,24 @@ class LineageTrack:
         for i in range(no_steps - 1):
             thr = int(threshold * (i + 1) / no_steps)
             self.track_trench(trench, thr, max_dpf, search_mode, probability_mode, p_sp, special_reporter, show_details,
-                              False, fill_gap, adap_dpf, drift, skew_model, update_para=True, cumulative=True)
+                              False, fill_gap, adap_dpf, drift, skew_model, update_para=True, cumulative=True, radius=radius)
             if self.sizer_length_paras[1] == 0 or self.adder_length_paras[1] == 0:
                 self.update_model_para("unif")
             else:
                 probability_mode = "sizer-adder"
         return (self.track_trench(trench, threshold, max_dpf, search_mode, probability_mode, p_sp, special_reporter,
                                   show_details, False, fill_gap, adap_dpf, drift, skew_model, update_para=True,
-                                  cumulative=True),
+                                  cumulative=True, radius=radius),
                 self.all_cells)
 
     def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                    special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False,
-                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200):
+                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200, radius=0):
         if trenches is None:
             trenches = self.trenches
         results = Parallel(n_jobs=-1, verbose=5)(delayed(self.track_trench_iteratively)
                                                  (t, threshold, max_dpf, search_mode, p_sp, special_reporter,
-                                                  show_details, fill_gap, adap_dpf, drift, skew_model, thresh_per_iter)
+                                                  show_details, fill_gap, adap_dpf, drift, skew_model, thresh_per_iter, radius)
                                                  for t in trenches)
         data_buffer = {
             "trench_track": [],

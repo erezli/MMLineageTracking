@@ -3,6 +3,8 @@ from LineageTrack.cells import Cell
 from scipy.stats import linregress
 from math import isnan
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import savgol_filter
 
 
 class Lineage:
@@ -17,6 +19,7 @@ class Lineage:
         self.reporter_intensities = [cell.reporter_intensity for cell in cells]
         self.barcode = cells[0].barcode
         self.pole_label = cells[0].poles
+        self.zernike = [cell.zernike for cell in cells]
 
         if cells[-1].lyse:
             self.lyse = True
@@ -116,3 +119,12 @@ class Lineage:
             dt = self.resident_time[i + 1] - self.resident_time[i]
             if not isnan(dlogA / dt):
                 yield dlogA / dt, (self.resident_time[i], self.labels[i])
+                
+    def partial_dlogL_dt(self, win, n):
+        for i in range(len(self.resident_time) - 1):
+            # lengths = gaussian_filter1d(self.lengths, sigma)
+            lengths = savgol_filter(self.lengths, win, n)
+            dlogL = np.log2(lengths[i + 1]) - np.log2(lengths[i])
+            dt = self.resident_time[i + 1] - self.resident_time[i]
+            if not isnan(dlogL / dt):
+                yield dlogL / dt, (self.resident_time[i], self.labels[i])
