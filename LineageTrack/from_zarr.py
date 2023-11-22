@@ -39,6 +39,7 @@ def get_cell_props(mask, channel_img, min_size=80):
     ###
 
     labels = mask.astype(int)
+    labels = remove_small_objects(labels, min_size=min_size)
 
     data = regionprops_table(labels, channel_img, properties=(
         "area", "major_axis_length", "minor_axis_length", "centroid",
@@ -111,7 +112,7 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         for i in tqdm(range(z1.shape[0]), 
                       desc=f"reading through images in channel {n}..."):
             for j in range(z1.shape[1]):
-                mask_image = z1[i, j, c, :, :]
+                mask_image = z1[i, j, 0, :, :]
                 intensity_image = z2[i, j, c, :, :]
                 trench = i
                 time = j

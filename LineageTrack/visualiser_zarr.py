@@ -40,7 +40,7 @@ class Visualiser:
         return cls(df_t, df_l)
 
     def label_images(self, zarr_dir, channel, mode="connect_daughter", save_dir="./temp/labelled_masks/",
-                     show_other=True, for_frames=None, colour_scale="Greys", fluores=False, step=1, skip=0):
+                     show_other=True, for_frames=None, colour_scale="Greys", fluores=False, mask=False, step=1, skip=0):
         """
         Generate images that is labelled by specific mode
         @param zarr_dir: directory of the images to label
@@ -121,40 +121,52 @@ class Visualiser:
 
                     image2 = zarr.open(zarr_dir, mode='r')[t, i + 1, channel, :, :]
                     # image2 = np.asarray(image2)
-                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB)
+                    if mask:
+                        image2 = image2.astype(bool).astype(np.uint8)
+                    image2 = cv.normalize(image2, None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
+                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB) # comment out if labelled masks
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
-                    cv.putText(image2, "t={}".format(time2),
-                               (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                    cv.putText(image2, "t={:.1f} min".format(time2),
+                               (0, 15), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                    cv.putText(image2, "n={}".format(i),
+                               (0, 30), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                    # cv.FONT_HERSHEY_COMPLEX_SMALL
                     cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-1"] * 100),
-                               (0, 30), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                               (0, 45), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
                     if i == 0:
                         image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
                         # image1 = np.asarray(image1)
-                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB)
+                        if mask:
+                            image1 = image1.astype(bool).astype(np.uint8)
+                        image1 = cv.normalize(image1, None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
+                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB) # comment out if labelled masks
                         if isinstance(fluores, int) and fluores != 0:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
-                        cv.putText(image1, "t={}".format(time1),
-                                   (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (0, 255, 0))
+                        cv.putText(image1, "t={:.1f} min".format(time1),
+                                   (0, 15), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                        cv.putText(image2, "n={}".format(i),
+                                   (0, 30), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
                         landscape = image1
                     else:
                         image1 = image_buffer
                     landscape = np.concatenate((landscape, image2), axis=1)
                     image_buffer = image2
                     for c in range(len(cells2.at[0, "label"])):
-                        if cells2.at[0, "parent_label-1"][c] is not None:
+                        
+                        if c < len(cells2.at[0, "parent_label-1"]) and cells2.at[0, "parent_label-1"][c] is not None:
                             parent = int(cells2.at[0, "parent_label-1"][c]) - 1
                             position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
                                          round(cells2.at[0, "centroid"][c][1]))
                             position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
                                          round(cells1.at[0, "centroid"][parent][1]))
-                            cv.line(landscape, position1, position2, (0, 255, 0), thickness=2)
+                            cv.line(landscape, position1, position2, (0, 255, 0), 2)
                     offset += image1.shape[1]
                 write_path = "landscape_line_TR{}_C{}.png".format(t, channel)
                 if not os.path.isdir(save_dir):
                     os.mkdir(save_dir)
-                cv.imwrite(save_dir + os.path.sep + write_path, landscape)
+                cv.imwrite(save_dir + os.path.sep + write_path, landscape * 255)
                 print(f"saved as {save_dir + os.path.sep + write_path}")
 
             # elif mode == "barcode":
@@ -300,7 +312,7 @@ class Visualiser:
                     pt2 = (round(line.positions[i+1][0] +
                                  (line.resident_time[i+1] - self.times[0]) / dt * self.image_width),
                            round(line.positions[i+1][1]))
-                    cv.line(landscape, pt1, pt2, (255, 0, 0), thickness=3)
+                    cv.line(landscape, pt1, pt2, (0, 0, 255), thickness=3)
             write_path = "highlighted_" + os.path.split(image_path)[1]
             if not os.path.isdir(save_dir):
                 os.mkdir(save_dir)

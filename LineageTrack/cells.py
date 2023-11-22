@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+import ast
 
 
 class Cell:
@@ -15,6 +16,9 @@ class Cell:
         # self.local_centroid_y = properties["centroid_local-0"]
         # self.local_centroid_x = properties["centroid_local-1"]
         self.orientation = properties["orientation"]
+        # useful moments: almost all
+        self.zernike = ast.literal_eval(properties["zernike"])
+        self.zernike_half = ast.literal_eval(properties["zernike_half"])
         self.channel_intensities = {}
         for c in channels:
             self.channel_intensities[c] = properties["{}_intensity_mean".format(c)]
@@ -36,7 +40,7 @@ class Cell:
     def __str__(self):
         return f"""cell in trench {self.trench} at {self.time} min with label {self.label}"""
 
-    def set_coordinates(self, division=0, growth=1, offset=0, reset_original=False):
+    def set_coordinates(self, division=0, growth=1, offset=0, reset_original=False, radius=0):
         """
         update the cell's major axis length and y position
         @param division: 0 is no division; 1 means there is division
@@ -46,14 +50,15 @@ class Cell:
         @return: a 2D array of one or two [length, y position]
         """
         if reset_original:
-            self.coord = np.array([[self.major, self.centroid_y, np.sqrt(self.area)]])
+            self.coord = np.array([[self.major, self.centroid_y, np.sqrt(self.area), np.sum(np.abs(self.zernike))]])
             return self.coord
         if division == 0:
             # self.coord = [self.area, self.major, self.minor, self.centroid_x, self.centroid_y, self.local_centroid_x,
             #              self.local_centroid_y, self.orientation]
             self.coord = np.array([[self.major * growth,
                                     self.centroid_y + offset + self.major * (growth - 1) / 2,
-                                    np.sqrt(self.area) * growth]])
+                                    np.sqrt(self.area) * growth, 
+                                    np.sum(np.abs(self.zernike)) * radius]]) # radius of the zernike
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             self.divide = False
@@ -65,10 +70,12 @@ class Cell:
             self.coord = np.array(
                 [[self.major * growth / 2 * 0.9,  # 0.9 is segmentation erosion
                   self.centroid_y + offset + self.major * (growth - 2) / 4,
-                  np.sqrt(self.area) * growth / 2 * 0.9],
+                  np.sqrt(self.area) * growth / 2 * 0.9, 
+                  np.sum(np.abs(self.zernike_half[0])) * radius],
                  [self.major * growth / 2 * 0.9,  # 0.9 is segmentation erosion
                   self.centroid_y + offset + self.major * (3 * growth - 2) / 4,
-                  np.sqrt(self.area) * growth / 2 * 0.9]])
+                  np.sqrt(self.area) * growth / 2 * 0.9, 
+                  np.sum(np.abs(self.zernike_half[1])) * radius]])
             # for i in self.channel_intensities:
             #     self.coord.append(i)
             self.divide = True
