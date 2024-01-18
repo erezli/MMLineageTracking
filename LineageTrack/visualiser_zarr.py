@@ -103,6 +103,11 @@ class Visualiser:
                 offset = 0
                 landscape = None
                 image_buffer = None
+                font_size = cv.FONT_HERSHEY_COMPLEX_SMALL
+                font_scale = 0.5
+                # cv.FONT_HERSHEY_TRIPLEX
+                # cv.FONT_HERSHEY_COMPLEX_SMALL
+                # cv.FONT_HERSHEY_SCRIPT_SIMPLEX
                 if for_frames:
                     idx = range(for_frames[0], for_frames[1])
                 else:
@@ -119,7 +124,7 @@ class Visualiser:
                                                (self.track_df["time_(mins)"] == time2)].copy()
                     cells2.reset_index(drop=True, inplace=True)
 
-                    image2 = zarr.open(zarr_dir, mode='r')[t, i + 1, channel, :, :]
+                    image2 = zarr.open(zarr_dir, mode='r')[t, (i + 1) * step, channel, :, :]
                     # image2 = np.asarray(image2)
                     if mask:
                         image2 = image2.astype(bool).astype(np.uint8)
@@ -128,12 +133,14 @@ class Visualiser:
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
                     cv.putText(image2, "t={:.1f} min".format(time2),
-                               (0, 15), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
-                    cv.putText(image2, "n={}".format(i),
-                               (0, 30), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                               (0, 15), font_size, font_scale, (0, 255, 0))
+                    cv.putText(image2, "n={}".format(i+1),
+                               (0, 30), font_size, font_scale, (0, 255, 0))
+                    # cv.FONT_HERSHEY_TRIPLEX
                     # cv.FONT_HERSHEY_COMPLEX_SMALL
+                    # cv.FONT_HERSHEY_SCRIPT_SIMPLEX
                     cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-1"] * 100),
-                               (0, 45), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                               (0, 45), font_size, font_scale, (0, 255, 0))
                     if i == 0:
                         image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
                         # image1 = np.asarray(image1)
@@ -145,9 +152,9 @@ class Visualiser:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
                         cv.putText(image1, "t={:.1f} min".format(time1),
-                                   (0, 15), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                                   (0, 15), font_size, font_scale, (0, 255, 0))
                         cv.putText(image2, "n={}".format(i),
-                                   (0, 30), cv.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+                                   (0, 30), font_size, font_scale, (0, 255, 0))
                         landscape = image1
                     else:
                         image1 = image_buffer

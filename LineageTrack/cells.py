@@ -24,6 +24,7 @@ class Cell:
             self.channel_intensities[c] = properties["{}_intensity_mean".format(c)]
         if reporter is not None:
             self.reporter_intensity = properties["{}_intensity_mean".format(reporter)]
+            self.reporter_total_intensity = properties["{}_intensity_total".format(reporter)]
         else:
             self.reporter_intensity = None
         self.coord = []

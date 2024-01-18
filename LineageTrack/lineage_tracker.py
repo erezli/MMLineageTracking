@@ -39,6 +39,8 @@ class LineageTrack:
             # might include later but takes a lot of memory
             # self.df.insert(len(self.df.columns),"{}_image_intensity".format(channel), d.loc[:, "image_intensity"])
             # self.df.insert(len(self.df.columns), "{}_identity".format(channel), d.loc[:, "identity"])
+            if channel == 'mVenus':
+                self.df.insert(self.df.shape[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
             if channel == 'PC':
                 self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])
                 self.df.insert(self.df.shape[1], "zernike_half", d.loc[:, "zernike_half"])
@@ -1109,6 +1111,7 @@ class LineageTrack:
         if threshold == -1:
             threshold = self.max_y
         no_steps = round(threshold / thresh_per_iter)
+        print(no_steps)
         self.update_model_para("unif")
         probability_mode = "sizer-adder"
         for i in range(no_steps - 1):

@@ -43,7 +43,7 @@ def get_cell_props(mask, channel_img, min_size=80):
 
     data = regionprops_table(labels, channel_img, properties=(
         "area", "major_axis_length", "minor_axis_length", "centroid",
-        "intensity_mean", "centroid_local", "image_intensity", "orientation"
+        "intensity_mean", "intensity_max", "centroid_local", "image_intensity", "orientation"
     ))
     order = sorted(range(len(data["centroid-0"])), key=lambda k: data["centroid-0"][k])
     for keys in data:
@@ -53,8 +53,9 @@ def get_cell_props(mask, channel_img, min_size=80):
 
 def extract_from_string(array): # for use when reading image intensity array from csv file (it will be string)
     return np.asarray(literal_eval(array.replace( '[   ' , '[' ).replace( '[  ' , '[' )
-                                   .replace( '    ' , ',' ).replace( '   ' , ',' )
-                                   .replace( '  ' , ',' ).replace( ' ' , ',' )), dtype=np.float32)
+                                   .replace( '[ ' , '[' ).replace( '    ' , ',' )
+                                   .replace( '   ' , ',' ).replace( '  ' , ',' )
+                                   .replace( ' ' , ',' )), dtype=np.float32)
 
 
 def add_information(data, channel, trench_id, time, identity, descriptor, radius):
@@ -64,6 +65,9 @@ def add_information(data, channel, trench_id, time, identity, descriptor, radius
     data["trench_id"] = [trench_id] * length
     data["time_(mins)"] = [time] * length
     data["identity"] = [identity] * length
+    if channel == 'mVenus': #temporary adjustment
+        image_list = [im for im in data["image_intensity"]]
+        data["intensity_total"] = [np.sum(im) for im in image_list]
     if descriptor and channel == 'PC':
         # image_list = [extract_from_string(im) for im in data["image_intensity"]]
         image_list = [im for im in data["image_intensity"]]
@@ -112,7 +116,7 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         for i in tqdm(range(z1.shape[0]), 
                       desc=f"reading through images in channel {n}..."):
             for j in range(z1.shape[1]):
-                mask_image = z1[i, j, 0, :, :]
+                mask_image = z1[i, j, 1, :, :] # may need to change
                 intensity_image = z2[i, j, c, :, :]
                 trench = i
                 time = j
