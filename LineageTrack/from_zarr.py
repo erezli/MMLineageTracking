@@ -116,7 +116,7 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         for i in tqdm(range(z1.shape[0]), 
                       desc=f"reading through images in channel {n}..."):
             for j in range(z1.shape[1]):
-                mask_image = z1[i, j, 1, :, :] # may need to change
+                mask_image = z1[i, j, 0, :, :] # may need to change
                 intensity_image = z2[i, j, c, :, :]
                 trench = i
                 time = j

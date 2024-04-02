@@ -1,4 +1,4 @@
-import os, re, copy, itertools, pickle
+import os, re, copy, itertools, pickle, sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -951,6 +951,8 @@ class LineageTrack:
                                         self.all_cells[self.current_trench][i][:no_current_tracked],
                                         self.all_cells[self.current_trench][i + 1][:no_next_tracked])
                         # print(self.tracked)
+                        if drift_current_frame is None:
+                            self.tracked = None
                     else:
                         self.tracked = None
                     # no_untracked = self.current_number_of_cells - max(len(tracked_cells)-1, 0)
@@ -1107,7 +1109,8 @@ class LineageTrack:
 
     def track_trench_iteratively(self, trench, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                  special_reporter=None, show_details=False, fill_gap=False,
-                                 adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200, radius=0):
+                                 adap_dpf=True, drift=False, skew_model=True, update_para=True, thresh_per_iter=200, radius=0):
+        sys.setrecursionlimit(999999999) # may need to losen the limit
         if threshold == -1:
             threshold = self.max_y
         no_steps = round(threshold / thresh_per_iter)
@@ -1116,25 +1119,32 @@ class LineageTrack:
         probability_mode = "sizer-adder"
         for i in range(no_steps - 1):
             thr = int(threshold * (i + 1) / no_steps)
-            self.track_trench(trench, thr, max_dpf, search_mode, probability_mode, p_sp, special_reporter, show_details,
-                              False, fill_gap, adap_dpf, drift, skew_model, update_para=True, cumulative=True, radius=radius)
+            _ = self.track_trench(trench=trench, threshold=thr, max_dpf=max_dpf, search_mode=search_mode, probability_mode=probability_mode, 
+                              p_sp=p_sp, special_reporter=special_reporter, show_details=show_details,
+                              ret_df=False, fill_gap=fill_gap, adap_dpf=adap_dpf, drift=drift, skew_model=skew_model, 
+                              update_para=update_para, cumulative=True, radius=radius)
             if self.sizer_length_paras[1] == 0 or self.adder_length_paras[1] == 0:
                 self.update_model_para("unif")
             else:
                 probability_mode = "sizer-adder"
-        return (self.track_trench(trench, threshold, max_dpf, search_mode, probability_mode, p_sp, special_reporter,
-                                  show_details, False, fill_gap, adap_dpf, drift, skew_model, update_para=True,
+        return (self.track_trench(trench=trench, threshold=threshold, max_dpf=max_dpf, search_mode=search_mode, 
+                                  probability_mode=probability_mode, p_sp=p_sp, special_reporter=special_reporter,
+                                  show_details=show_details, ret_df=False, fill_gap=fill_gap, adap_dpf=adap_dpf, 
+                                  drift=drift, skew_model=skew_model, update_para=update_para,
                                   cumulative=True, radius=radius),
                 self.all_cells)
 
     def track_trenches_iteratively(self, trenches=None, threshold=-1, max_dpf=2, search_mode="SeqMatch", p_sp=-1,
                                    special_reporter=None, show_details=False, save_dir="./temp/", ret_df=False,
-                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True, thresh_per_iter=200, radius=0):
+                                   fill_gap=False, adap_dpf=True, drift=False, skew_model=True, update_para=True, 
+                                   thresh_per_iter=200, radius=0):
         if trenches is None:
             trenches = self.trenches
         results = Parallel(n_jobs=-1, verbose=5)(delayed(self.track_trench_iteratively)
-                                                 (t, threshold, max_dpf, search_mode, p_sp, special_reporter,
-                                                  show_details, fill_gap, adap_dpf, drift, skew_model, thresh_per_iter, radius)
+                                                 (trench=t, threshold=threshold, max_dpf=max_dpf, search_mode=search_mode, 
+                                                  p_sp=p_sp, special_reporter=special_reporter, show_details=show_details, 
+                                                  fill_gap=fill_gap, adap_dpf=adap_dpf, drift=drift, skew_model=skew_model, 
+                                                  update_para=update_para, thresh_per_iter=thresh_per_iter, radius=radius)
                                                  for t in trenches)
         data_buffer = {
             "trench_track": [],

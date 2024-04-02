@@ -153,7 +153,7 @@ class Visualiser:
                         self.image_width = image1.shape[1]
                         cv.putText(image1, "t={:.1f} min".format(time1),
                                    (0, 15), font_size, font_scale, (0, 255, 0))
-                        cv.putText(image2, "n={}".format(i),
+                        cv.putText(image1, "n={}".format(i),
                                    (0, 30), font_size, font_scale, (0, 255, 0))
                         landscape = image1
                     else:
