@@ -17,6 +17,8 @@ class Lineage:
         self.positions = [(cell.centroid_x, cell.centroid_y) for cell in cells]
         self.areas = [cell.area for cell in cells]
         self.reporter_intensities = [cell.reporter_intensity for cell in cells]
+        # self.reporter_total_intensities = [cell.reporter_total_intensity for cell in cells]
+        self.channel_intensities = [cell.channel_intensities for cell in cells]
         self.barcode = cells[0].barcode
         self.pole_label = cells[0].poles
         self.zernike = [cell.zernike for cell in cells]
@@ -60,7 +62,8 @@ class Lineage:
 
             def track_line(cell1, parent):
                 line = [cell1]
-                while cell1.divide is False and cell1.daughters:
+                # while cell1.divide is False and cell1.daughters:
+                while isinstance(cell1.daughters, Cell):
                     cell1 = cell1.daughters
                     line.append(cell1)
                 lineages.append(cls(line))
