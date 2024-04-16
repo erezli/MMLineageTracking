@@ -39,7 +39,7 @@ class LineageTrack:
             # might include later but takes a lot of memory
             # self.df.insert(len(self.df.columns),"{}_image_intensity".format(channel), d.loc[:, "image_intensity"])
             # self.df.insert(len(self.df.columns), "{}_identity".format(channel), d.loc[:, "identity"])
-            if channel == 'mVenus':
+            if channel == 'YFP':
                 self.df.insert(self.df.shape[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
             if channel == 'PC':
                 self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])

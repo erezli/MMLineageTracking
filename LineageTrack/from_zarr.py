@@ -65,7 +65,7 @@ def add_information(data, channel, trench_id, time, identity, descriptor, radius
     data["trench_id"] = [trench_id] * length
     data["time_(mins)"] = [time] * length
     data["identity"] = [identity] * length
-    if channel == 'mVenus': #temporary adjustment
+    if channel == 'YFP': #temporary adjustment
         image_list = [im for im in data["image_intensity"]]
         data["intensity_total"] = [np.sum(im) for im in image_list]
     if descriptor and channel == 'PC':
@@ -116,7 +116,7 @@ def generate_csv(mask_path, img_path, save_dir, dt=1, min_size=0,
         for i in tqdm(range(z1.shape[0]), 
                       desc=f"reading through images in channel {n}..."):
             for j in range(z1.shape[1]):
-                mask_image = z1[i, j, 0, :, :] # may need to change
+                mask_image = z1[i, j, 1, :, :] # may need to change
                 intensity_image = z2[i, j, c, :, :]
                 trench = i
                 time = j

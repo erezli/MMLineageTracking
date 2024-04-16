@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import zarr
 from tqdm import tqdm
+from skimage.morphology import remove_small_objects
 
 
 # load from dataframes, visualise using label_images(zarr_dir, channel, mode="landscape-line", save_dir="./temp/")
@@ -139,8 +140,8 @@ class Visualiser:
                     # cv.FONT_HERSHEY_TRIPLEX
                     # cv.FONT_HERSHEY_COMPLEX_SMALL
                     # cv.FONT_HERSHEY_SCRIPT_SIMPLEX
-                    cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-1"] * 100),
-                               (0, 45), font_size, font_scale, (0, 255, 0))
+                    # cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-1"] * 100),
+                    #            (0, 45), font_size, font_scale, (0, 255, 0))
                     if i == 0:
                         image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
                         # image1 = np.asarray(image1)
@@ -176,114 +177,189 @@ class Visualiser:
                 cv.imwrite(save_dir + os.path.sep + write_path, landscape * 255)
                 print(f"saved as {save_dir + os.path.sep + write_path}")
 
-            # elif mode == "barcode":
-            #     for i in range(len(times)):
-            #         time = times[i]
-            #         frame = "%04d" % ((i * step) + skip)
-            #         cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
-            #                                   (self.track_df["time_(mins)"] == time)].copy()
-            #         cells.reset_index(drop=True, inplace=True)
-            #         read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
-            #         image = cv.imread(image_dir + os.path.sep + read_path, cv.IMREAD_GRAYSCALE)
-            #         contours, _ = cv.findContours(image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
-            #         rev_con = ()
-            #         for k in reversed(contours):
-            #             rev_con = rev_con + (k,)
-            #         image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
-            #         flat_list_barcode = [int(item, 2)
-            #                              for sublist in self.track_df.loc[:, "barcode"]
-            #                              for item in sublist if item is not None]
-            #         flat_list_barcode = sorted(list(set(flat_list_barcode)))
-            #         cmap = matplotlib.cm.get_cmap(colour_scale)
-            #         # max_gray = max(flat_list_barcode)
-            #         for c in range(len(cells.at[0, "label"])):
-            #             if cells.at[0, "barcode"][c] is not None:
-            #                 position = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
-            #                 cv.putText(image, "{:08b}".format(int(cells.at[0, "barcode"][c], 2)),
-            #                            position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
-            #                 # gray_scale = 250 - (int(cells.at[0, "barcode"][c], 2) / max_gray) * 200
-            #                 # gray_scale = 250 - (flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
-            #                 #                     len(flat_list_barcode)) * 250
-            #                 color_scale = cmap((flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
-            #                                     len(flat_list_barcode)))
-            #                 color_scale = tuple(reversed([int((255 * x)) for x in color_scale[0:3]]))
-            #                 cv.drawContours(image, rev_con, contourIdx=c,
-            #                                 color=color_scale,
-            #                                 thickness=-1)
-            #         write_path = generate_file_name(template, "barcoded_", self.FOV, t, frame, mode=template_mode)
-            #         if not os.path.isdir(save_dir):
-            #             os.mkdir(save_dir)
-            #         cv.imwrite(save_dir + os.path.sep + write_path, image)
+            elif mode == "barcode":
+                if for_frames:
+                    idx = range(for_frames[0], for_frames[1])
+                else:
+                    idx = range(len(times) - 1)
+                for i in tqdm(idx, desc=f"trench {t}"):
+                    time = times[i]
+                    frame = "%04d" % ((i * step) + skip)
+                    cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                              (self.track_df["time_(mins)"] == time)].copy()
+                    cells.reset_index(drop=True, inplace=True)
+                    # read_path = generate_file_name(template, "", self.FOV, t, frame, mode=template_mode)
+                    # image = cv.imread(image_dir + os.path.sep + read_path, cv.IMREAD_GRAYSCALE)
+                    image = zarr.open(zarr_dir, mode='r')[t, i * step, channel, :, :]
+                    image = cv.normalize(image.astype(bool).astype(np.uint8), None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
+                    # image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
+                    # print(image.astype(np.uint8))
+                    #image1 = image1.astype(bool).astype(np.uint8)
+                    contours, _ = cv.findContours(image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+                    rev_con = ()
+                    for k in reversed(contours):
+                        rev_con = rev_con + (k,)
+                    image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
+                    flat_list_barcode = [int(item, 2)
+                                         for sublist in self.track_df.loc[:, "barcode"]
+                                         for item in sublist if item is not None]
+                    flat_list_barcode = sorted(list(set(flat_list_barcode)))
+                    cmap = matplotlib.cm.get_cmap(colour_scale)
+                    # max_gray = max(flat_list_barcode)
+                    for c in range(len(cells.at[0, "label"])):
+                        if cells.at[0, "barcode"][c] is not None:
+                            position = (round(cells.at[0, "centroid"][c][0]), round(cells.at[0, "centroid"][c][1]))
+                            cv.putText(image, "{:08b}".format(int(cells.at[0, "barcode"][c], 2)),
+                                       position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
+                            # gray_scale = 250 - (int(cells.at[0, "barcode"][c], 2) / max_gray) * 200
+                            # gray_scale = 250 - (flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
+                            #                     len(flat_list_barcode)) * 250
+                            color_scale = cmap((flat_list_barcode.index(int(cells.at[0, "barcode"][c], 2)) /
+                                                len(flat_list_barcode)))
+                            color_scale = tuple(reversed([int((255 * x)) for x in color_scale[0:3]]))
+                            try:
+                                cv.drawContours(image, rev_con, contourIdx=c,
+                                                color=color_scale,
+                                                thickness=-1)
+                            except:
+                                print(c)
+                    # write_path = generate_file_name(template, "barcoded_", self.FOV, t, frame, mode=template_mode)
+                    write_path = "barcode_TR{}_C{}_T{}.png".format(t, channel, i)
+                    if not os.path.isdir(save_dir):
+                        os.mkdir(save_dir)
+                    cv.imwrite(save_dir + os.path.sep + write_path, image)
 
-            # elif mode == "landscape-colour-scale":
-            #     if for_frames:
-            #         idx = range(for_frames[0], for_frames[1])
-            #     else:
-            #         idx = range(len(times) - 1)
-            #     cells_barcode = self.track_df.loc[(self.track_df["trench_id"] == t) &
-            #                                       (self.track_df["time_(mins)"] >= times[idx[0]]) &
-            #                                       (self.track_df["time_(mins)"] <= times[idx[-1]]), "barcode"].copy()
-            #     flat_list_barcode = [int(item, 2) for sublist in cells_barcode for item in sublist if item is not None]
-            #     flat_list_barcode = sorted(list(set(flat_list_barcode)))
-            #     # max_gray = max(flat_list_barcode)
+            elif mode == "landscape-colour-scale":
+                if for_frames:
+                    idx = range(for_frames[0], for_frames[1])
+                else:
+                    idx = range(len(times) - 1)
+                cells_barcode = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                                  (self.track_df["time_(mins)"] >= times[idx[0]]) &
+                                                  (self.track_df["time_(mins)"] <= times[idx[-1]]), "barcode"].copy()
+                flat_list_barcode = [int(item, 2) for sublist in cells_barcode for item in sublist if item is not None]
+                flat_list_barcode = sorted(list(set(flat_list_barcode)))
+                # max_gray = max(flat_list_barcode)
 
-            #     def paint_cells(X):
-            #         _time = times[X]
-            #         _frame = "%04d" % ((X * step) + skip)
-            #         _cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
-            #                                    (self.track_df["time_(mins)"] == _time)].copy()
-            #         _cells.reset_index(drop=True, inplace=True)
-            #         _path = generate_file_name(template, "", self.FOV, t, _frame, mode=template_mode)
-            #         _image = cv.imread(image_dir + os.path.sep + _path, cv.IMREAD_GRAYSCALE)
-            #         _contours, _hierarchy = cv.findContours(_image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
-            #         _rev_con = ()
-            #         for K in reversed(_contours):
-            #             _rev_con = _rev_con + (K,)
-            #         cv.putText(_image, "t={}".format(_time),
-            #                    (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, 180)
-            #         _image = cv.cvtColor(_image, cv.COLOR_GRAY2RGB)
-            #         cmap = matplotlib.cm.get_cmap(colour_scale)
-            #         for C in range(len(_cells.at[0, "label"])):
-            #             _barcode = _cells.at[0, "barcode"][C]
-            #             if _barcode is not None:
-            #                 # _gray_scale = 250 - (int(_barcode, 2) / max_gray) * 200
-            #                 # _gray_scale = 250 - \
-            #                 #               (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
-            #                 try:
-            #                     _color_scale = cmap(flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode))
-            #                     _color_scale = tuple(int((255 * x)) for x in _color_scale[0:3])
-            #                     cv.drawContours(_image, _rev_con, contourIdx=C,
-            #                                     color=_color_scale,
-            #                                     thickness=-1)
-            #                 except ValueError:
-            #                     print("unseen barcode")
-            #                 _position = (round(_cells.at[0, "centroid"][C][0]),
-            #                              round(_cells.at[0, "centroid"][C][1]))
-            #                 cv.putText(_image, "{:08b}".format(int(_cells.at[0, "barcode"][C], 2)),
-            #                            _position, cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (180, 180, 180))
-            #             elif not show_other:
-            #                 cv.drawContours(_image, _rev_con, contourIdx=C,
-            #                                 color=(0, 0, 0), thickness=-1)
-            #         if not show_other:
-            #             for x in range(3):
-            #                 cv.drawContours(_image, _rev_con, contourIdx=len(_cells.at[0, "label"]) + x,
-            #                                 color=(0, 0, 0), thickness=-1)
-            #         return _image
+                def paint_cells(X):
+                    _time = times[X]
+                    _frame = "%04d" % ((X * step) + skip)
+                    _cells = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                               (self.track_df["time_(mins)"] == _time)].copy()
+                    _cells.reset_index(drop=True, inplace=True)
+                    # _path = generate_file_name(template, "", self.FOV, t, _frame, mode=template_mode)
+                    # _image = cv.imread(image_dir + os.path.sep + _path, cv.IMREAD_GRAYSCALE)
+                    _image = zarr.open(zarr_dir, mode='r')[t, X * step, channel, :, :]
+                    _labels = _image.astype(int)
+                    # _image.astype(np.uint8)
+                    _labels = remove_small_objects(_labels, min_size=200)
+                    _unique_values = np.unique(_labels)
+                    _contours = []
 
-            #     landscape = paint_cells(0)
-            #     for i in idx:
-            #         landscape = np.concatenate((landscape, paint_cells(i+1)), axis=1)
-            #     landscape = landscape[:int(self.max_y * 1.05), :]
-            #     if for_frames:
-            #         time_in_name = str(for_frames[0]) + "-" + str(for_frames[1])
-            #     else:
-            #         time_in_name = ""
-            #     write_path = generate_file_name(template, "landscape_barcode_", self.FOV, t,
-            #                                     time_in_name, mode=template_mode)
-            #     if not os.path.isdir(save_dir):
-            #         os.mkdir(save_dir)
-            #     cv.imwrite(save_dir + os.path.sep + write_path, landscape)
-            #     print(f"saved as {save_dir + os.path.sep + write_path}")
+                    for v in _unique_values:
+                        # Create a binary mask for the current value
+                        __mask = np.where(_labels == v, 255, 0).astype(np.uint8)
+                        
+                        # Find contours in the binary mask
+                        __con, __hier = cv.findContours(__mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+                        _contours.append(__con[0])
+                    # _image = cv.normalize(_labels, None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
+                    # _contours, _hierarchy = cv.findContours(_labels.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+                    # print(_contours)
+                    _rev_con = tuple(_contours)
+                    # _rev_con = ()
+                    # for K in reversed(_contours):
+                    #     _rev_con = _rev_con + (K,)
+                    
+                    _image = cv.normalize(_labels.astype(np.uint8), None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
+                    _image = cv.cvtColor(_image, cv.COLOR_GRAY2RGB)
+                    cv.putText(_image, "t={}".format(_time),
+                               (0, 15), cv.FONT_HERSHEY_COMPLEX_SMALL, 0.5, (200, 200, 200))
+                    cmap = matplotlib.cm.get_cmap(colour_scale)
+                    for C in range(len(_cells.at[0, "label"])):
+                        _barcode = _cells.at[0, "barcode"][C]
+                        if _barcode is not None:
+                            # _gray_scale = 250 - (int(_barcode, 2) / max_gray) * 200
+                            # _gray_scale = 250 - \
+                            #               (flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode)) * 250
+                            try:
+                                _color_scale = cmap(flat_list_barcode.index(int(_barcode, 2)) / len(flat_list_barcode))
+                                _color_scale = tuple(int((255 * x)) for x in _color_scale[0:3])
+                                cv.drawContours(_image, _rev_con, contourIdx=C,
+                                                color=_color_scale,
+                                                thickness=-1)
+                            except ValueError:
+                                print("unseen barcode")
+                            # _position = (round(_cells.at[0, "centroid"][C][0])-15,
+                            #              round(_cells.at[0, "centroid"][C][1]))
+                            # _position = (1,
+                            #              round(_cells.at[0, "centroid"][C][1]))
+                            # cv.FONT_HERSHEY_SCRIPT_SIMPLEX
+                            # cv.FONT_HERSHEY_COMPLEX_SMALL
+                            _text = "{:08b}".format(int(_cells.at[0, "barcode"][C], 2))
+                            _font = cv.FONT_HERSHEY_COMPLEX_SMALL
+                            _font_scale = 0.4
+                            _thickness = 1
+                            _text_size = cv.getTextSize(_text, _font, _font_scale, _thickness)[0]
+                            _position = (round(_cells.at[0, "centroid"][C][0] + 8), # include cell size in the future
+                                         round(_cells.at[0, "centroid"][C][1] - _text_size[0]/2))
+
+                            # Create a new blank image with width and height equal to the text size
+                            _text_image = np.zeros((_text_size[1], _text_size[0], 3), dtype=np.uint8)
+                            _color = (256, 256, 256)
+                            cv.putText(_text_image, _text, (0, _text_size[1]-1), 
+                                       _font, _font_scale, _color, _thickness)
+                            # _M = cv.getRotationMatrix2D((_text_size[0] / 2, _text_size[1] / 2), 90, 1)
+                            # _text_image_rotated = cv.warpAffine(_text_image, _M, (_text_size[1], _text_size[0]))
+                            _text_image_rotated = cv.rotate(_text_image, cv.ROTATE_90_CLOCKWISE)
+                            _text_mask = np.max(_text_image_rotated, axis=2)
+                            _locations = np.where(_text_mask != 0)
+                            _x, _y = _position
+                            for rgb_c in range(3): # For each color channel
+                                try:
+                                    _image[_y:_y+_text_size[0], _x:_x+_text_size[1], rgb_c] = _image[_y:_y+_text_size[0], _x:_x+_text_size[1], rgb_c] * (1 - _text_mask / 255.0) + _text_image_rotated[:, :, rgb_c] * (_text_mask / 255.0)
+                                except:
+                                    print(_image[_y:_y+_text_size[0], _x:_x+_text_size[1], 0].shape)
+                                    print(_text_mask.shape)
+                            # cv.putText(_image, _text, _position, 
+                            #            _font, _font_scale, )
+                        elif not show_other:
+                            cv.drawContours(_image, _rev_con, contourIdx=C,
+                                            color=(0, 0, 0), thickness=-1)
+                        elif show_other:
+                            cv.drawContours(_image, _rev_con, contourIdx=C,
+                                            color=(255, 255, 255), thickness=-1)
+                    if not show_other:
+                        for x in range(3):
+                            try:
+                                cv.drawContours(_image, _rev_con, contourIdx=len(_cells.at[0, "label"]) + x,
+                                                color=(0, 0, 0), thickness=-1)
+                            except:
+                                pass
+                    else:
+                        for x in range(3):
+                            try:
+                                cv.drawContours(_image, _rev_con, contourIdx=len(_cells.at[0, "label"]) + x,
+                                                color=(255, 255, 255), thickness=-1)
+                            except:
+                                pass
+                    return _image
+
+                landscape = paint_cells(0)
+                for i in tqdm(idx, desc=f"trench {t}"):
+                    landscape = np.concatenate((landscape, paint_cells(i+1)), axis=1)
+                landscape = landscape[:int(self.max_y * 1.05), :]
+                if for_frames:
+                    time_in_name = str(for_frames[0]) + "-" + str(for_frames[1])
+                else:
+                    time_in_name = ""
+                write_path = "barcode_kymo_TR{}_C{}.png".format(t, channel)
+                # write_path = generate_file_name(template, "landscape_barcode_", self.FOV, t,
+                #                                 time_in_name, mode=template_mode)
+                if not os.path.isdir(save_dir):
+                    os.mkdir(save_dir)
+                cv.imwrite(save_dir + os.path.sep + write_path, landscape)
+                print(f"saved as {save_dir + os.path.sep + write_path}")
 
             # elif mode == "generation-by-poles":
             #     for i in range(len(times)):
