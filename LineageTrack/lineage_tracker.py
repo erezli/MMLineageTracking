@@ -36,11 +36,16 @@ class LineageTrack:
             self.channels.append(channel)
             # self.df.loc[:, "{}_intensity_mean".format(channel)] = d.loc[:, "intensity_mean"]
             self.df.insert(self.df.shape[1], "{}_intensity_mean".format(channel), d.loc[:, "intensity_mean"])
+            self.df.insert(self.df.shape[1], "{}_intensity_max".format(channel), d.loc[:, "intensity_max"])
+            self.df.insert(self.df.shape[1], "{}_intensity_min".format(channel), d.loc[:, "intensity_min"])
+            self.df.insert(self.df.shape[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
             # might include later but takes a lot of memory
             # self.df.insert(len(self.df.columns),"{}_image_intensity".format(channel), d.loc[:, "image_intensity"])
             # self.df.insert(len(self.df.columns), "{}_identity".format(channel), d.loc[:, "identity"])
-            if channel == 'YFP':
+            if channel == 'mVenus': # change
                 self.df.insert(self.df.shape[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
+            # if channel == 'YFP': # change
+            #     self.df.insert(self.df.shape[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
             if channel == 'PC':
                 self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])
                 self.df.insert(self.df.shape[1], "zernike_half", d.loc[:, "zernike_half"])
@@ -859,7 +864,7 @@ class LineageTrack:
                 self.threshold = self.max_y
             if special_reporter in self.channels:
                 self.reporter = special_reporter
-                self.channels.remove(special_reporter)
+                # self.channels.remove(special_reporter)
             elif special_reporter is not None and special_reporter is not self.reporter:
                 print(self.channels)
                 print(special_reporter)
@@ -1114,7 +1119,7 @@ class LineageTrack:
         if threshold == -1:
             threshold = self.max_y
         no_steps = round(threshold / thresh_per_iter)
-        print(no_steps)
+        # print(no_steps)
         self.update_model_para("unif")
         probability_mode = "sizer-adder"
         for i in range(no_steps - 1):
@@ -1177,7 +1182,8 @@ class LineageTrack:
             data_buffer["coord"].extend(r[0]["coord"])
             data_buffer["barcode"].extend(r[0]["barcode"])
             data_buffer["poles"].extend(r[0]["poles"])
-            k = list(r[1].keys())[0]
+            # k = list(r[1].keys())[0]
+            k = r[0]["trench"]
             self.all_cells[k] = r[1][k]
         track_df = pd.DataFrame(data={
             "trench_id": data_buffer["trench_track"],
@@ -1349,6 +1355,7 @@ def scoring(p, d):
             return 0
     elif scoring_mode == "posterior":
         if 1 >= p >= 0:
+            # return (4 + p) * (np.exp(1 / np.mean(d)) - 1)
             return (3 + p) * (np.exp(1 / np.mean(d)) - 1)
         else:
             return 0

@@ -20,13 +20,22 @@ class Cell:
         self.zernike = ast.literal_eval(properties["zernike"])
         self.zernike_half = ast.literal_eval(properties["zernike_half"])
         self.channel_intensities = {}
+        self.channel_intensities_max = {}
+        self.channel_intensities_min = {}
+        self.channel_intensities_total = {}
         for c in channels:
             self.channel_intensities[c] = properties["{}_intensity_mean".format(c)]
+            self.channel_intensities_max[c] = properties["{}_intensity_max".format(c)]
+            self.channel_intensities_min[c] = properties["{}_intensity_min".format(c)]
+            self.channel_intensities_total[c] = properties["{}_intensity_min".format(c)]
+            # if c == "mVenus":
+            #     self.reporter_total_intensity = properties["{}_intensity_total".format(c)]
         if reporter is not None:
             self.reporter_intensity = properties["{}_intensity_mean".format(reporter)]
             self.reporter_total_intensity = properties["{}_intensity_total".format(reporter)]
         else:
             self.reporter_intensity = None
+            self.reporter_total_intensity = None
         self.coord = []
         self.divide = False
         self.out = False

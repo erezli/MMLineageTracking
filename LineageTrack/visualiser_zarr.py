@@ -125,12 +125,13 @@ class Visualiser:
                                                (self.track_df["time_(mins)"] == time2)].copy()
                     cells2.reset_index(drop=True, inplace=True)
 
-                    image2 = zarr.open(zarr_dir, mode='r')[t, (i + 1) * step, channel, :, :]
+                    image2 = zarr.open(zarr_dir, mode='r')[t, (i + 1) * step, channel, :, :]#.astype(np.uint8)
                     # image2 = np.asarray(image2)
                     if mask:
                         image2 = image2.astype(bool).astype(np.uint8)
                     image2 = cv.normalize(image2, None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
-                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB) # comment out if labelled masks
+                    # image2 = cv.bitwise_not(image2)
+                    image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB) # comment out if labelled masks or remove type casting
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
                     cv.putText(image2, "t={:.1f} min".format(time2),
@@ -143,12 +144,13 @@ class Visualiser:
                     # cv.putText(image2, "Conf={:.1f}%".format(cells2.at[0, "confidence-1"] * 100),
                     #            (0, 45), font_size, font_scale, (0, 255, 0))
                     if i == 0:
-                        image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]
+                        image1 = zarr.open(zarr_dir, mode='r')[t, i, channel, :, :]#.astype(np.uint8)
                         # image1 = np.asarray(image1)
                         if mask:
                             image1 = image1.astype(bool).astype(np.uint8)
                         image1 = cv.normalize(image1, None, alpha = 0, beta = 255, norm_type = cv.NORM_MINMAX)
-                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB) # comment out if labelled masks
+                        # image1 = cv.bitwise_not(image1)
+                        image1 = cv.cvtColor(image1, cv.COLOR_GRAY2RGB) # comment out if labelled masks or remove type casting
                         if isinstance(fluores, int) and fluores != 0:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
@@ -175,6 +177,7 @@ class Visualiser:
                 if not os.path.isdir(save_dir):
                     os.mkdir(save_dir)
                 cv.imwrite(save_dir + os.path.sep + write_path, landscape * 255)
+                # cv.imwrite(save_dir + os.path.sep + write_path, landscape)
                 print(f"saved as {save_dir + os.path.sep + write_path}")
 
             elif mode == "barcode":

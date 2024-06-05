@@ -17,10 +17,13 @@ class Lineage:
         self.positions = [(cell.centroid_x, cell.centroid_y) for cell in cells]
         self.areas = [cell.area for cell in cells]
         self.reporter_intensities = [cell.reporter_intensity for cell in cells]
-        # self.reporter_total_intensities = [cell.reporter_total_intensity for cell in cells]
+        self.reporter_total_intensities = [cell.reporter_total_intensity for cell in cells]
         self.channel_intensities = [cell.channel_intensities for cell in cells]
+        self.channel_max_intensities = [cell.channel_intensities_max for cell in cells]
+        self.channel_min_intensities = [cell.channel_intensities_min for cell in cells]
         self.barcode = cells[0].barcode
         self.pole_label = cells[0].poles
+        self.orientations = [cell.orientation for cell in cells]
         self.zernike = [cell.zernike for cell in cells]
 
         if cells[-1].lyse:
