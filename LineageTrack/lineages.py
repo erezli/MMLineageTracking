@@ -21,6 +21,7 @@ class Lineage:
         self.channel_intensities = [cell.channel_intensities for cell in cells]
         self.channel_max_intensities = [cell.channel_intensities_max for cell in cells]
         self.channel_min_intensities = [cell.channel_intensities_min for cell in cells]
+        self.channel_total_intensities = [cell.channel_intensities_total for cell in cells]
         self.barcode = cells[0].barcode
         self.pole_label = cells[0].poles
         self.orientations = [cell.orientation for cell in cells]
