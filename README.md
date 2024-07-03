@@ -1,7 +1,7 @@
 # MMLineageTracking
 Lineage Tracking Algorithm for Mother Machine Using Cells Properties
 
-Please have a look at the [iPython notebook](MMLT_Example.ipynb) for more information
+Please have a look at the [iPython notebook](MMLT_example.ipynb) for more information
 
 The algorithm consists of four main steps.
 1. **Loading cell properties**: Each cell is defined by several different properties extracted from the segmentation results. These properties include factors like cell position, length, area, and image channel intensity.
