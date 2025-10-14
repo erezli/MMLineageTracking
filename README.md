@@ -24,6 +24,7 @@ CPU: 4+ cores, 3.3+ GHz/core
 
 The runtimes are highly variable depending on the number of bacteria, frames, and mode of tracking, below are generated using a computer with 16 GB RAM, 8 cores@3.3 GHz.
 
+Time taken to track N cell simultaneously over 61 frames with the adaptive number of division per frame to simulate set to 3:
 | Average No. of cells | sizer-adder with skewed model | sizer with skewed model | sizer-adder with unskewed model |
 | --- | --- | --- | --- |
 |3.5 |	2.51 s $\pm$ 296 ms |	413 ms$\pm$ 4.4 ms |	2.67 s $\pm$ 86.1 ms |
@@ -32,6 +33,7 @@ The runtimes are highly variable depending on the number of bacteria, frames, an
 |11.92 |	1min 5s $\pm$ 6.01 s |	29.3 s $\pm$ 646 ms |	48.4 s $\pm$ 2.17 s| 
 |14.75 |	2min 58s $\pm$ 10.2 s |	1min 35s $\pm$ 466 ms |	2min 26s $\pm$ 12.3 s |
 |17.57 |	10min 4s $\pm$ 50.2 s |	6min $\pm$ 16.3 s |	8min 26s $\pm$ 38 s |
+
 
 ## Software Requirements
 
