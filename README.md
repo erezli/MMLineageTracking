@@ -41,8 +41,8 @@ Time taken to track N cell simultaneously over 61 frames with the adaptive numbe
 
 The package development version is tested on *Linux* and *Windows* operating systems. The developmental version of the package has been tested on the following systems:
 
-Linux: Ubuntu 24.04
-Windows: Windows 10
+Linux: Ubuntu 24.04  
+Windows: Windows 10  
 
 ### Package dependencies
 
