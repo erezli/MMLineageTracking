@@ -27,7 +27,7 @@ The runtimes are highly variable depending on the number of bacteria, frames, an
 Time taken to track N cell simultaneously over 61 frames with the adaptive number of division per frame to simulate set to 3:
 | Average No. of cells | sizer-adder with skewed model | sizer with skewed model | sizer-adder with unskewed model |
 | --- | --- | --- | --- |
-|3.5 |	2.51 s $\pm$ 296 ms |	413 ms$\pm$ 4.4 ms |	2.67 s $\pm$ 86.1 ms |
+|3.5 |	2.51 s $\pm$ 296 ms |	413 ms $\pm$ 4.4 ms |	2.67 s $\pm$ 86.1 ms |
 |6.45 |	8.18 s $\pm$ 244 ms |	2.23 s $\pm$ 64.1 ms |	7.49 s $\pm$ 593 ms |
 |9.15 |	20.3 s $\pm$ 1.57 s |	7.94 s $\pm$ 102 ms |	21.9 s $\pm$ 642 ms |
 |11.92 |	1min 5s $\pm$ 6.01 s |	29.3 s $\pm$ 646 ms |	48.4 s $\pm$ 2.17 s| 
