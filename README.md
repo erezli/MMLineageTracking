@@ -44,6 +44,21 @@ The package development version is tested on *Linux* and *Windows* operating sys
 Linux: Ubuntu 24.04  
 Windows: Windows 10  
 
+# Installation Guide
+
+This algorithm only has a development version. To run this, users should download the repository and install the required packages listed in [setup.yml](setup.yml)
+
 ### Package dependencies
 
-The versions of software are shown in the setup.yml file
+The versions of software are shown in the setup file.  
+To install them on Linux, use anaconda:
+
+```sh
+conda env create -f setup.yml
+```
+Or use pip:
+
+```sh
+pip install -r requirements.txt
+```
+The packages should take approximately 8 minutes to install with anaconda on a recommended computer. 
