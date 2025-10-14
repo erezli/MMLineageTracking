@@ -11,3 +11,6 @@ The algorithm consists of four main steps.
 3. **Matching with true future**: For each scenario, the array of simulated properties at each frame is matched with the subsequent frame, yielding a soft-max likelihood probability for each simulation. This likelihood is computed from the minimum distance achieved when matching the two high-dimensional arrays, with order constraints imposed since the cells cannot switch positions in the MM. Moreover, this approach also allows the detection of lysis events by permitting skipping in the matching process. The final tracking results are obtained by performing Bayesian inference with the prior and likelihood probability.
 
 4. **Storing tracked lineage in iteration**: Given that the number of simulations scales exponentially with the number of cells that we need to track simultaneously, and the simulation noise increases proportionally to the number of cells (as positional changes accumulate in one direction), we choose to concurrently track only a restricted number of cells and retain the lineage results. This strategy allows us to track more new cells in the subsequent iterations, with updated parameters and remembered lineages. This significantly improves both the efficiency and the precision of the algorithm.
+
+Dependencies requirement is included in the setup.yml
+Operating systems needed are Windows or Linux.
