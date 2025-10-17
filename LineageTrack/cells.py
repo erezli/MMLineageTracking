@@ -27,7 +27,7 @@ class Cell:
             self.channel_intensities[c] = properties["{}_intensity_mean".format(c)]
             self.channel_intensities_max[c] = properties["{}_intensity_max".format(c)]
             self.channel_intensities_min[c] = properties["{}_intensity_min".format(c)]
-            self.channel_intensities_total[c] = properties["{}_intensity_min".format(c)]
+            self.channel_intensities_total[c] = properties["{}_intensity_total".format(c)]
             # if c == "mVenus":
             #     self.reporter_total_intensity = properties["{}_intensity_total".format(c)]
         if reporter is not None:

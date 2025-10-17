@@ -18,7 +18,7 @@ from LineageTrack.lineages import Lineage
 
 
 class LineageTrack:
-    def __init__(self, df_list, files=None):
+    def __init__(self, df_list, files=None, descriptor=True):
         self.files = files
         # Todo: use Zarr array to reduce memory usage
         # Todo: add a trench object?
@@ -46,7 +46,7 @@ class LineageTrack:
             #     self.df.insert(self.df.shapes[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
             # if channel == 'YFP': # change
             #     self.df.insert(self.df.shape[1], "{}_intensity_total".format(channel), d.loc[:, "intensity_total"])
-            if channel == 'PC':
+            if channel == 'PC' and descriptor:
                 self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])
                 self.df.insert(self.df.shape[1], "zernike_half", d.loc[:, "zernike_half"])
         self.channels = sorted(list(set(self.channels)))
@@ -108,7 +108,7 @@ class LineageTrack:
         print(self.df.shape)
 
     @classmethod
-    def from_path(cls, filepath, *args):
+    def from_path(cls, filepath, descriptor=True, *args):
         if os.path.isdir(filepath):
             directory = filepath
             files = glob(directory + "{}*".format(os.path.sep))
@@ -132,7 +132,7 @@ class LineageTrack:
                                       "orientation": np.float32, "intensity_mean": np.float32})
                    # converters={"image_intensity": reconstruct_array_from_str})
                    for f, cols in zip(files, cols_list)]
-        return cls(df_list=df_list, files=files)
+        return cls(df_list=df_list, files=files, descriptor=descriptor)
 
     def __str__(self):
         if self.files:
@@ -1120,7 +1120,7 @@ class LineageTrack:
             threshold = self.max_y
         no_steps = round(threshold / thresh_per_iter)
         # print(no_steps)
-        self.update_model_para("unif")
+        self.update_model_para("unif") # want to uncomment if some trenches are bad
         probability_mode = "sizer-adder"
         for i in range(no_steps - 1):
             thr = int(threshold * (i + 1) / no_steps)
