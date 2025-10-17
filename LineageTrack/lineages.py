@@ -86,6 +86,47 @@ class Lineage:
 
         return lineages
 
+    @classmethod
+    def from_tracker_reset_poles(cls, cells_list, start_pole=None, mother_pole_bonus=None):
+        lineages = []
+        for mother_cell in cells_list:
+            if start_pole:
+                mother_cell.poles = start_pole
+                if mother_cell.label == 1 and mother_pole_bonus:
+                    mother_cell.poles = (start_pole[0] + mother_pole_bonus, start_pole[1])
+            next_line = [(mother_cell, None)]
+
+            def track_line(cell1, parent):
+                lineage_poles = cell1.poles
+                line = [cell1]
+                # while cell1.divide is False and cell1.daughters:
+                while isinstance(cell1.daughters, Cell):
+                    cell1 = cell1.daughters
+                    cell1.poles = lineage_poles
+                    line.append(cell1)
+                lineages.append(cls(line))
+                lineages[-1].set_parent(parent)
+                if parent is not None:
+                    parent.set_daughters([lineages[-1]])
+                return cell1
+
+            while len(next_line) != 0:
+                end_cell = track_line(next_line[0][0], next_line[0][1])
+                next_line.pop(0)
+                if isinstance(end_cell.daughters, tuple):
+                    if end_cell.daughters[0].label < end_cell.daughters[1].label:
+                        end_cell.daughters[0].poles = (end_cell.poles[0] + 1, 0)
+                        end_cell.daughters[1].poles = (0, end_cell.poles[1] + 1)
+                    else:
+                        end_cell.daughters[1].poles = (end_cell.poles[0] + 1, 0)
+                        end_cell.daughters[0].poles = (0, end_cell.poles[1] + 1)
+                    next_line.extend([(d, lineages[-1]) for d in end_cell.daughters])
+                elif isinstance(end_cell.daughters, Cell):
+                    print("will this ever get printed?")
+                    next_line.append((end_cell.daughters, lineages[-1]))
+
+        return lineages
+
     def get_adder_dl(self):
         if self.daughters[0] is not None and self.parent is not None:
             if self.lengths[-1] > self.lengths[0]:  # Todo: better condition for outliers?

@@ -41,7 +41,7 @@ class Visualiser:
         return cls(df_t, df_l)
 
     def label_images(self, zarr_dir, channel, mode="connect_daughter", save_dir="./temp/labelled_masks/",
-                     show_other=True, for_frames=None, colour_scale="Greys", fluores=False, mask=False, step=1, skip=0):
+                     show_other=True, for_frames=None, colour_scale="Greys", fluores=False, mask=False, step=1, skip=0, text_label=True):
         """
         Generate images that is labelled by specific mode
         @param zarr_dir: directory of the images to label
@@ -110,22 +110,31 @@ class Visualiser:
                 # cv.FONT_HERSHEY_COMPLEX_SMALL
                 # cv.FONT_HERSHEY_SCRIPT_SIMPLEX
                 if for_frames:
-                    idx = range(for_frames[0], for_frames[1])
+                    idx = range(for_frames[0], for_frames[1], step)
                 else:
-                    idx = range(len(times) - 1)
+                    idx = range(0, len(times) - 1, step)
                 for i in tqdm(idx, desc=f"trench {t}"):
                     time1 = times[i]
-                    time2 = times[i + 1]
-                    frame1 = "%04d" % ((i * step) + skip)
-                    frame2 = "%04d" % (((i + 1) * step) + skip)
+                    time2 = times[i + step]
+                    intermediate_time = [times[i + frame_step + 1] for frame_step in range(step-1)]
+                    frame1 = "%04d" % (i + skip)
+                    frame2 = "%04d" % ((i + step) + skip)
+                    intermediate_frames = ["%04d" % ((i + frame_step + 1) + skip) for frame_step in range(step-1)]
                     cells1 = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                                (self.track_df["time_(mins)"] == time1)].copy()
                     cells1.reset_index(drop=True, inplace=True)
                     cells2 = self.track_df.loc[(self.track_df["trench_id"] == t) &
                                                (self.track_df["time_(mins)"] == time2)].copy()
                     cells2.reset_index(drop=True, inplace=True)
+                    intermediate_cells = []
+                    for inter_t in intermediate_time:
+                        cellsn = self.track_df.loc[(self.track_df["trench_id"] == t) &
+                                                   (self.track_df["time_(mins)"] == inter_t)].copy()
+                        cellsn.reset_index(drop=True, inplace=True)
+                        intermediate_cells.append(cellsn)
+                    # print(intermediate_cells)
 
-                    image2 = zarr.open(zarr_dir, mode='r')[t, (i + 1) * step, channel, :, :]#.astype(np.uint8)
+                    image2 = zarr.open(zarr_dir, mode='r')[t, (i + step), channel, :, :]#.astype(np.uint8)
                     # image2 = np.asarray(image2)
                     if mask:
                         image2 = image2.astype(bool).astype(np.uint8)
@@ -134,10 +143,11 @@ class Visualiser:
                     image2 = cv.cvtColor(image2, cv.COLOR_GRAY2RGB) # comment out if labelled masks or remove type casting
                     if isinstance(fluores, int) and fluores != 0:
                         image2 *= fluores
-                    cv.putText(image2, "t={:.1f} min".format(time2),
-                               (0, 15), font_size, font_scale, (0, 255, 0))
-                    cv.putText(image2, "n={}".format(i+1),
-                               (0, 30), font_size, font_scale, (0, 255, 0))
+                    if text_label:
+                        cv.putText(image2, "t={:.1f} min".format(time2),
+                                   (0, 15), font_size, font_scale, (0, 255, 0))
+                        cv.putText(image2, "n={}".format(i+step),
+                                   (0, 30), font_size, font_scale, (0, 255, 0))
                     # cv.FONT_HERSHEY_TRIPLEX
                     # cv.FONT_HERSHEY_COMPLEX_SMALL
                     # cv.FONT_HERSHEY_SCRIPT_SIMPLEX
@@ -154,24 +164,31 @@ class Visualiser:
                         if isinstance(fluores, int) and fluores != 0:
                             image1 *= fluores
                         self.image_width = image1.shape[1]
-                        cv.putText(image1, "t={:.1f} min".format(time1),
-                                   (0, 15), font_size, font_scale, (0, 255, 0))
-                        cv.putText(image1, "n={}".format(i),
-                                   (0, 30), font_size, font_scale, (0, 255, 0))
+                        if text_label:
+                            cv.putText(image1, "t={:.1f} min".format(time1),
+                                       (0, 15), font_size, font_scale, (0, 255, 0))
+                            cv.putText(image1, "n={}".format(i),
+                                       (0, 30), font_size, font_scale, (0, 255, 0))
                         landscape = image1
                     else:
                         image1 = image_buffer
                     landscape = np.concatenate((landscape, image2), axis=1)
                     image_buffer = image2
                     for c in range(len(cells2.at[0, "label"])):
-                        
+                        step_connected = True
                         if c < len(cells2.at[0, "parent_label-1"]) and cells2.at[0, "parent_label-1"][c] is not None:
-                            parent = int(cells2.at[0, "parent_label-1"][c]) - 1
                             position1 = (round(cells2.at[0, "centroid"][c][0] + offset + image1.shape[1]),
                                          round(cells2.at[0, "centroid"][c][1]))
-                            position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
-                                         round(cells1.at[0, "centroid"][parent][1]))
-                            cv.line(landscape, position1, position2, (0, 255, 0), 2)
+                            parent = int(cells2.at[0, "parent_label-1"][c]) - 1
+                            for connecting_parent in intermediate_cells:
+                                if parent < len(connecting_parent.at[0, "parent_label-1"]) and connecting_parent.at[0, "parent_label-1"][parent] is not None:
+                                    parent = int(connecting_parent.at[0, "parent_label-1"][parent]) - 1
+                                else:
+                                    step_connected = False
+                            if step_connected:
+                                position2 = (round(cells1.at[0, "centroid"][parent][0] + offset),
+                                             round(cells1.at[0, "centroid"][parent][1]))
+                                cv.line(landscape, position1, position2, (50, 50, 50), 2)
                     offset += image1.shape[1]
                 write_path = "landscape_line_TR{}_C{}.png".format(t, channel)
                 if not os.path.isdir(save_dir):

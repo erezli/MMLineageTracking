@@ -8,6 +8,7 @@ import zarr
 import os
 from ast import literal_eval
 import mahotas
+import sys
 # import cv2 as cv
 
 
@@ -67,7 +68,7 @@ def add_information(data, channel, trench_id, time, identity, descriptor, radius
     data["time_(mins)"] = [time] * length
     data["identity"] = [identity] * length
     # if channel == 'mVenus': #temporary adjustment
-    # image_list = [im for im in data["image_intensity"]]
+    image_list = [im for im in data["image_intensity"]]
     # data["intensity_total"] = [np.sum(im) for im in image_list]
     data["intensity_total"] = [im*area for im, area in zip(data["intensity_mean"], data["area"])]
     if descriptor and channel == 'PC':
@@ -81,6 +82,15 @@ def add_information(data, channel, trench_id, time, identity, descriptor, radius
         data["zernike_half"] = [[list(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :], radius)),
                                  list(mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))]
                                 for im in image_list]
+    elif descriptor and channel == 'BF':
+        image_list = [im for im in data["image_intensity"]]
+        # make sure radius covers the whole array
+        data["zernike"] = [list(mahotas.features.zernike_moments(im.astype(bool), radius)) for im in image_list]
+        data["zernike_half"] = [[list(mahotas.features.zernike_moments(im.astype(bool)[:int(im.shape[0]/2), :], radius)),
+                                 list(mahotas.features.zernike_moments(im.astype(bool)[int(im.shape[0]/2):, :], radius))]
+                                for im in image_list]
+    np.set_printoptions(threshold=sys.maxsize)
+    data["image_intensity"] = [im.astype(str) for im in data["image_intensity"]]
     return data
 
 

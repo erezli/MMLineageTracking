@@ -49,6 +49,9 @@ class LineageTrack:
             if channel == 'PC' and descriptor:
                 self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])
                 self.df.insert(self.df.shape[1], "zernike_half", d.loc[:, "zernike_half"])
+            elif channel == 'BF' and descriptor:
+                self.df.insert(self.df.shape[1], "zernike", d.loc[:, "zernike"])
+                self.df.insert(self.df.shape[1], "zernike_half", d.loc[:, "zernike_half"])
         self.channels = sorted(list(set(self.channels)))
         self.properties = sorted(list(set(self.df.columns)))
         self.df.sort_values(["trench_id", "time_(mins)", "label"], inplace=True)
